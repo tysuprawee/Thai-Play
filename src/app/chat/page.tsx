@@ -31,7 +31,11 @@ interface Conversation {
     unreadCount: number
 }
 
-export default function ChatPage() {
+import { Suspense } from 'react'
+
+// ... existing imports ...
+
+function ChatContent() {
     const supabase = createClient()
     const router = useRouter()
     const searchParams = useSearchParams()
@@ -60,9 +64,6 @@ export default function ChatPage() {
             const partnerId = searchParams.get('seller_id')
             if (partnerId && partnerId !== user.id) {
                 setSelectedPartnerId(partnerId)
-                // If partner not in conversations, fetch their profile and add temp conversation?
-                // For now, simpler to just fetch all conversations and if 'partnerId' exists, select it.
-                // If it's a new chat, we might need to handle empty state explicitly.
             }
 
             fetchConversations(user.id)
@@ -70,10 +71,11 @@ export default function ChatPage() {
         init()
     }, [])
 
+    // ... (rest of the logic remains exactly the same, creating fetchConversations, useEffect for messages, handleSendMessage etc.)
+    // Note: I will need to copy the entire function body of the original component into ChatContent
+
     // Fetch Conversations
     const fetchConversations = async (userId: string) => {
-        // This is complex in SQL. Simplified approach: fetch all messages where I am sender or receiver
-        // Then process in JS. For production, create a view or dedicated table.
         const { data: msgs } = await supabase
             .from('messages')
             .select('*, sender:profiles!sender_id(*), receiver:profiles!receiver_id(*)')
@@ -150,7 +152,6 @@ export default function ChatPage() {
                 const newMsg = payload.new as Message
                 if (newMsg.sender_id === selectedPartnerId) {
                     setMessages(prev => [...prev, newMsg])
-                    // Mark as read immediately? Or let user action do it?
                 }
                 // Refresh conversations list to update 'last message'
                 fetchConversations(user.id)
@@ -330,5 +331,13 @@ export default function ChatPage() {
                 </div>
             </div>
         </div>
+    )
+}
+
+export default function ChatPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-white">Loading chat...</div>}>
+            <ChatContent />
+        </Suspense>
     )
 }
