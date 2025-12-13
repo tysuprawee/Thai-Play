@@ -152,6 +152,15 @@ function ChatContent() {
     useEffect(() => {
         if (!selectedConversationId || !user) return
 
+        const markAsRead = async () => {
+            await supabase
+                .from('messages')
+                .update({ is_read: true })
+                .eq('conversation_id', selectedConversationId)
+                .neq('sender_id', user.id)
+                .eq('is_read', false)
+        }
+
         const loadMessages = async () => {
             setLoadingMessages(true)
             const { data } = await supabase
@@ -160,14 +169,14 @@ function ChatContent() {
                 .eq('conversation_id', selectedConversationId)
                 .order('created_at', { ascending: true })
 
-            if (data) setMessages(data)
+            if (data) {
+                setMessages(data)
+                // Mark unread messages as read
+                if (data.some(m => !m.is_read && m.sender_id !== user.id)) {
+                    markAsRead()
+                }
+            }
             setLoadingMessages(false)
-
-            // Mark as read (simple updates)
-            /* 
-               In a real app, we'd batch this or do it on server. 
-               For now, client-side update is okay for MPV.
-            */
         }
 
         loadMessages()
@@ -184,16 +193,34 @@ function ChatContent() {
                 schema: 'public',
                 table: 'messages',
                 filter: `conversation_id=eq.${selectedConversationId}`
-            }, (payload) => {
+            }, async (payload) => {
                 const newMsg = payload.new as Message
-                // Ignore my own messages (handled optimistically)
-                if (newMsg.sender_id === user.id) return
 
-                // Play Sound
-                new Audio('/sounds/notification.mp3').play().catch((e) => console.log('Audio play failed', e))
+                // If I sent it, just add it (optimistic handling might duplicate if not careful, but we have checks)
+                // If partner sent it, add it AND mark as read since we are viewing
+                if (newMsg.sender_id !== user.id) {
+                    // Play Sound
+                    new Audio('/sounds/notification.mp3').play().catch((e) => console.log('Audio play failed', e))
+
+                    // Mark as read immediately
+                    await supabase.from('messages').update({ is_read: true }).eq('id', newMsg.id)
+                    newMsg.is_read = true
+                }
+
+                if (newMsg.sender_id === user.id) return // Optimistic skip
 
                 setMessages(prev => [...prev, newMsg])
                 fetchConversations(user.id) // Refresh sidebar
+            })
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'messages',
+                filter: `conversation_id=eq.${selectedConversationId}`
+            }, (payload) => {
+                // Handle Read Receipts updates
+                const updatedMsg = payload.new as Message
+                setMessages(prev => prev.map(m => m.id === updatedMsg.id ? updatedMsg : m))
             })
             .on('broadcast', { event: 'typing' }, (payload) => {
                 if (payload.payload.userId !== user.id) {
@@ -471,17 +498,18 @@ function ChatContent() {
                                     const showHeader = index === 0 || formatDateHeader(msg.created_at) !== formatDateHeader(messages[index - 1].created_at)
 
                                     return (
-                                        <div key={msg.id}>
+                                        <div key={msg.id} className={cn("flex flex-col mb-4", isMe ? "items-end" : "items-start")}>
                                             {showHeader && (
-                                                <div className="flex justify-center my-4">
+                                                <div className="flex justify-center w-full my-4">
                                                     <span className="text-[10px] uppercase tracking-widest text-gray-500 bg-[#13151f] px-2 py-1 rounded-full border border-white/5">
                                                         {formatDateHeader(msg.created_at)}
                                                     </span>
                                                 </div>
                                             )}
-                                            <div className={cn("flex", isMe ? "justify-end" : "justify-start")}>
+
+                                            <div className={cn("flex max-w-[70%]", isMe ? "justify-end" : "justify-start")}>
                                                 <div className={cn(
-                                                    "max-w-[70%] p-3 rounded-2xl text-sm leading-relaxed",
+                                                    "p-3 rounded-2xl text-sm leading-relaxed break-words",
                                                     isMe ? "bg-indigo-600 text-white rounded-br-none" : "bg-[#2a2d3e] text-gray-200 rounded-bl-none"
                                                 )}>
                                                     {msg.message_type === 'image' && msg.media_url ? (
@@ -491,10 +519,23 @@ function ChatContent() {
                                                     ) : (
                                                         <p>{msg.content}</p>
                                                     )}
-                                                    <div className={cn("text-[10px] mt-1 text-right opacity-70", isMe ? "text-indigo-200" : "text-gray-400")}>
-                                                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    </div>
                                                 </div>
+                                            </div>
+
+                                            {/* Timestamp & Read Status - Outside Bubble */}
+                                            <div className="flex items-center gap-1 mt-1 px-1">
+                                                <span className="text-[10px] text-gray-500">
+                                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                                {isMe && (
+                                                    <span className={cn("text-[10px]", msg.is_read ? "text-indigo-400" : "text-gray-600")}>
+                                                        {/* Double Tick SVG */}
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-3 h-3">
+                                                            <path d="M18 6L7 17L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                            <path d="M22 10L12 20L11 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                        </svg>
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     )

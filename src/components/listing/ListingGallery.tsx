@@ -81,18 +81,18 @@ export function ListingGallery({ images, title }: ListingGalleryProps) {
                         </button>
                     </DialogTrigger>
 
-                    <DialogContent className="max-w-[100vw] w-screen h-screen bg-black/95 border-none p-0 flex flex-col items-center justify-center shadow-none focus:outline-none z-[100]" showCloseButton={false}>
+                    <DialogContent className="max-w-[100vw] w-screen h-[100dvh] bg-black/95 border-none p-0 flex flex-col shadow-none focus:outline-none z-[100]" showCloseButton={false}>
                         <DialogTitle className="sr-only">Image View</DialogTitle>
 
-                        {/* Close Button */}
-                        <div className="absolute top-4 right-4 z-50 flex gap-2">
-                            <DialogClose className="p-2 rounded-full bg-white/10 text-white hover:bg-white/20">
+                        {/* Top Controls */}
+                        <div className="absolute top-0 left-0 right-0 p-4 z-50 flex justify-end gap-2 bg-gradient-to-b from-black/50 to-transparent">
+                            <DialogClose className="p-2 rounded-full bg-white/10 text-white hover:bg-white/20 backdrop-blur-md transition-colors">
                                 <X className="w-6 h-6" />
                             </DialogClose>
                         </div>
 
-                        {/* Image Viewer Area */}
-                        <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                        {/* Image Viewer Area - Flex 1 to take all space */}
+                        <div className="flex-1 relative w-full h-full min-h-0 overflow-hidden">
                             <TransformWrapper
                                 initialScale={1}
                                 minScale={1}
@@ -102,7 +102,7 @@ export function ListingGallery({ images, title }: ListingGalleryProps) {
                                 {({ zoomIn, zoomOut, resetTransform }) => (
                                     <>
                                         {/* Zoom Controls */}
-                                        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50 flex gap-4 bg-black/50 p-2 rounded-full backdrop-blur-md border border-white/10">
+                                        <div className="absolute top-1/2 right-4 -translate-y-1/2 z-50 flex flex-col gap-4 bg-black/50 p-2 rounded-full backdrop-blur-md border border-white/10">
                                             <button onClick={() => zoomIn()} className="p-2 text-white hover:text-indigo-400 transition-colors">
                                                 <ZoomIn className="w-5 h-5" />
                                             </button>
@@ -115,13 +115,14 @@ export function ListingGallery({ images, title }: ListingGalleryProps) {
                                         </div>
 
                                         <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full flex items-center justify-center">
-                                            <div className="relative w-[90vw] h-[80vh]">
+                                            <div className="relative w-full h-full p-4 md:p-10">
                                                 <Image
                                                     src={mainImage.media_url}
                                                     alt="Full View"
                                                     fill
                                                     className="object-contain"
                                                     quality={100}
+                                                    priority
                                                 />
                                             </div>
                                         </TransformComponent>
@@ -129,7 +130,7 @@ export function ListingGallery({ images, title }: ListingGalleryProps) {
                                 )}
                             </TransformWrapper>
 
-                            {/* Navigation in Lightbox (Outside TransformWrapper so it doesn't move) */}
+                            {/* Navigation inside layer */}
                             {images.length > 1 && (
                                 <>
                                     <button
@@ -148,15 +149,15 @@ export function ListingGallery({ images, title }: ListingGalleryProps) {
                             )}
                         </div>
 
-                        {/* Thumbnail Strip in Lightbox */}
-                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 overflow-x-auto max-w-[90%] p-2 bg-black/50 rounded-xl backdrop-blur-sm border border-white/10 z-50">
+                        {/* Thumbnail Strip - Fixed height at bottom */}
+                        <div className="h-24 flex-none w-full bg-black/80 backdrop-blur-md border-t border-white/10 p-4 flex items-center justify-center gap-2 z-50 overflow-x-auto">
                             {images.map((img, idx) => (
                                 <button
                                     key={img.id}
                                     onClick={() => setSelectedIndex(idx)}
                                     className={cn(
-                                        "relative w-12 h-12 rounded-md overflow-hidden border-2 transition-all flex-shrink-0",
-                                        selectedIndex === idx ? "border-indigo-500 scale-110" : "border-transparent opacity-70 hover:opacity-100"
+                                        "relative w-16 h-16 rounded-md overflow-hidden border-2 transition-all flex-shrink-0",
+                                        selectedIndex === idx ? "border-indigo-500 scale-105 opacity-100" : "border-transparent opacity-50 hover:opacity-100"
                                     )}
                                 >
                                     <Image src={img.media_url} alt="Thumb" fill className="object-cover" />
