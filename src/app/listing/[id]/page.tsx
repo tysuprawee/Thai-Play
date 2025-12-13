@@ -7,7 +7,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/server'
 import { formatPrice } from '@/lib/utils'
+
 import { ShieldCheck, MessageSquare, ShoppingCart, Star, Clock } from 'lucide-react'
+import { ListingGallery } from '@/components/listing/ListingGallery'
 
 export default async function ListingPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params
@@ -30,32 +32,10 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
                 {/* Left Column: Images & Details */}
                 <div className="lg:col-span-2 space-y-6">
                     {/* Image Gallery */}
-                    {listing.listing_media && listing.listing_media.length > 0 ? (
-                        <div className="space-y-4">
-                            {/* Main (First) Image */}
-                            <div className="aspect-video relative rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
-                                <img
-                                    src={listing.listing_media[0].media_url}
-                                    alt={listing.title_th}
-                                    className="w-full h-full object-contain"
-                                />
-                            </div>
-                            {/* Thumbnails (if more than 1) */}
-                            {listing.listing_media.length > 1 && (
-                                <div className="grid grid-cols-4 gap-2">
-                                    {listing.listing_media.map((media: any) => (
-                                        <div key={media.id} className="aspect-video relative rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:ring-2 hover:ring-indigo-500">
-                                            <img src={media.media_url} alt="Thumbnail" className="w-full h-full object-cover" />
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="aspect-video bg-gray-200 rounded-lg flex items-center justify-center text-gray-400">
-                            <span className="text-lg">No Images Available</span>
-                        </div>
-                    )}
+                    <ListingGallery
+                        images={listing.listing_media || []}
+                        title={listing.title_th}
+                    />
 
                     <div>
                         <div className="flex items-center gap-2 mb-2">
