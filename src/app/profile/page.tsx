@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -9,10 +9,19 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Crop as CropIcon } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Pencil, Trash2, ExternalLink, Plus } from 'lucide-react'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog"
 import Link from 'next/link'
+import Cropper from 'react-easy-crop'
 
 export default function EditProfilePage() {
     const [loading, setLoading] = useState(false)
@@ -22,6 +31,17 @@ export default function EditProfilePage() {
     // Form Fields
     const [displayName, setDisplayName] = useState('')
     const [bio, setBio] = useState('')
+
+    // Avatar Upload & Crop State
+    const [avatarFile, setAvatarFile] = useState<File | null>(null) // The final file to upload
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null) // The preview to show in UI
+
+    // Crop Modal State
+    const [cropModalOpen, setCropModalOpen] = useState(false)
+    const [tempImageSrc, setTempImageSrc] = useState<string | null>(null) // The raw image to crop
+    const [crop, setCrop] = useState({ x: 0, y: 0 })
+    const [zoom, setZoom] = useState(1)
+    const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
 
     const supabase = createClient()
     const router = useRouter()
@@ -49,29 +69,110 @@ export default function EditProfilePage() {
             if (data) {
                 setDisplayName(data.display_name || '')
                 setBio(data.bio || '')
+                setAvatarPreview(user.user_metadata?.avatar_url || null)
             }
         }
         fetchProfile()
     }, [])
 
+    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return
+        const file = e.target.files[0]
+
+        // Read file as URL for cropper
+        const reader = new FileReader()
+        reader.addEventListener('load', () => {
+            setTempImageSrc(reader.result?.toString() || null)
+            setCropModalOpen(true)
+            e.target.value = '' // Reset input so same file can be selected again
+        })
+        reader.readAsDataURL(file)
+    }
+
+    const onCropComplete = useCallback((croppedArea: any, croppedAreaPixels: any) => {
+        setCroppedAreaPixels(croppedAreaPixels)
+    }, [])
+
+    const saveCroppedImage = async () => {
+        try {
+            if (!tempImageSrc || !croppedAreaPixels) return
+            const croppedImageBlob = await getCroppedImg(tempImageSrc, croppedAreaPixels)
+            if (!croppedImageBlob) return
+
+            // Create a File from Blob
+            const fileName = `avatar-${Date.now()}.jpg`
+            const file = new File([croppedImageBlob], fileName, { type: 'image/jpeg' })
+
+            setAvatarFile(file)
+            setAvatarPreview(URL.createObjectURL(croppedImageBlob))
+            setCropModalOpen(false)
+            setTempImageSrc(null)
+            setZoom(1)
+        } catch (e) {
+            console.error(e)
+            alert('Failed to crop image')
+        }
+    }
+
     const handleUpdate = async (e: React.FormEvent) => {
         e.preventDefault()
         setLoading(true)
 
-        const { error } = await supabase
+        let avatarUrl = user.user_metadata?.avatar_url
+
+        // 1. Upload Avatar if changed
+        if (avatarFile) {
+            const fileExt = 'jpg' // We convert to jpg in cropper
+            const fileName = `${user.id}-${Math.random()}.${fileExt}`
+            const { error: uploadError } = await supabase.storage
+                .from('avatars')
+                .upload(fileName, avatarFile)
+
+            if (uploadError) {
+                alert('Error uploading avatar: ' + uploadError.message)
+                setLoading(false)
+                return
+            }
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(fileName)
+
+            avatarUrl = publicUrl
+        }
+
+        // 2. Update Database Profile
+        const { error: dbError } = await supabase
             .from('profiles')
             .update({
                 display_name: displayName,
                 bio: bio,
+                avatar_url: avatarUrl,
                 updated_at: new Date().toISOString()
             })
             .eq('id', user.id)
 
-        if (error) {
-            alert('Error: ' + error.message)
+        if (dbError) {
+            alert('Error updating profile: ' + dbError.message)
+            setLoading(false)
+            return
+        }
+
+        // 3. Update Auth Metadata (Syncs with Navbar)
+        const { error: authError } = await supabase.auth.updateUser({
+            data: {
+                full_name: displayName,
+                avatar_url: avatarUrl
+            }
+        })
+
+        if (authError) {
+            alert('Error syncing auth data: ' + authError.message)
         } else {
             alert('บันทึกข้อมูลเรียบร้อย')
             router.refresh()
+            // Force reload to ensure Navbar updates if router.refresh() isn't enough for client components
+            window.location.reload()
         }
         setLoading(false)
     }
@@ -179,14 +280,26 @@ export default function EditProfilePage() {
                             <CardTitle className="text-white">ข้อมูลส่วนตัว</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="flex justify-center mb-6">
-                                <Avatar className="h-24 w-24">
-                                    <AvatarImage src={user.user_metadata?.avatar_url} />
-                                    <AvatarFallback>ME</AvatarFallback>
-                                </Avatar>
-                            </div>
-
                             <form onSubmit={handleUpdate} className="space-y-6">
+                                <div className="flex flex-col items-center mb-6 gap-4">
+                                    <div className="relative group cursor-pointer">
+                                        <Avatar className="h-24 w-24 ring-2 ring-white/10 group-hover:ring-indigo-500 transition-all">
+                                            <AvatarImage src={avatarPreview || user.user_metadata?.avatar_url} />
+                                            <AvatarFallback>ME</AvatarFallback>
+                                        </Avatar>
+                                        <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Pencil className="w-6 h-6 text-white" />
+                                        </div>
+                                        <Input
+                                            type="file"
+                                            accept="image/*"
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                            onChange={handleAvatarChange}
+                                        />
+                                    </div>
+                                    <p className="text-xs text-gray-500">คลิกที่รูปเพื่อเปลี่ยนรูปโปรไฟล์</p>
+                                </div>
+
                                 <div className="space-y-2">
                                     <Label className="text-gray-300">ชื่อที่ใช้แสดง</Label>
                                     <Input className="bg-[#13151f] border-white/10 text-white" value={displayName} onChange={e => setDisplayName(e.target.value)} />
@@ -201,7 +314,7 @@ export default function EditProfilePage() {
                                     />
                                 </div>
 
-                                <Button type="submit" className="w-full" disabled={loading}>
+                                <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500" disabled={loading}>
                                     {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                     บันทึกการเปลี่ยนแปลง
                                 </Button>
@@ -210,6 +323,103 @@ export default function EditProfilePage() {
                     </Card>
                 </TabsContent>
             </Tabs>
+
+            {/* CROP MODAL */}
+            <Dialog open={cropModalOpen} onOpenChange={setCropModalOpen}>
+                <DialogContent className="sm:max-w-[600px] bg-[#13151f] border-white/10 text-white">
+                    <DialogHeader>
+                        <DialogTitle>ปรับแต่งรูปโปรไฟล์</DialogTitle>
+                        <DialogDescription className="text-gray-400">
+                            ลากเพื่อเลื่อน และซูมเพื่อจัดตำแหน่งให้เหมาะสม
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="relative w-full h-80 bg-black rounded-lg overflow-hidden my-4">
+                        {tempImageSrc && (
+                            <Cropper
+                                image={tempImageSrc}
+                                crop={crop}
+                                zoom={zoom}
+                                aspect={1} // Square aspect ratio
+                                onCropChange={setCrop}
+                                onCropComplete={onCropComplete}
+                                onZoomChange={setZoom}
+                            />
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-4 mb-4">
+                        <span className="text-xs text-gray-400">Zoom</span>
+                        <input
+                            type="range"
+                            value={zoom}
+                            min={1}
+                            max={3}
+                            step={0.1}
+                            aria-labelledby="Zoom"
+                            onChange={(e) => setZoom(Number(e.target.value))}
+                            className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer range-sm"
+                        />
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            variant="ghost"
+                            onClick={() => { setCropModalOpen(false); setTempImageSrc(null); }}
+                            className="text-gray-400 hover:text-white"
+                        >
+                            ยกเลิก
+                        </Button>
+                        <Button onClick={saveCroppedImage} className="bg-indigo-600 hover:bg-indigo-500">
+                            ยืนยันรูปภาพ
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
+}
+
+// Utility to crop image
+const createImage = (url: string): Promise<HTMLImageElement> =>
+    new Promise((resolve, reject) => {
+        const image = new Image()
+        image.addEventListener('load', () => resolve(image))
+        image.addEventListener('error', (error) => reject(error))
+        image.setAttribute('crossOrigin', 'anonymous')
+        image.src = url
+    })
+
+async function getCroppedImg(imageSrc: string, pixelCrop: any) {
+    const image = await createImage(imageSrc)
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+
+    if (!ctx) {
+        return null
+    }
+
+    // set canvas width to final desired crop size - this will clear existing context
+    canvas.width = pixelCrop.width
+    canvas.height = pixelCrop.height
+
+    // draw cropped image
+    ctx.drawImage(
+        image,
+        pixelCrop.x,
+        pixelCrop.y,
+        pixelCrop.width,
+        pixelCrop.height,
+        0,
+        0,
+        pixelCrop.width,
+        pixelCrop.height
+    )
+
+    // As Blob
+    return new Promise<Blob | null>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+            resolve(blob)
+        }, 'image/jpeg')
+    })
 }

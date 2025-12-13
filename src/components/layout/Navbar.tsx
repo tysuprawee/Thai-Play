@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Search, ShoppingBag, Menu, User, Bell, Gamepad2, Coins, CreditCard, Sparkles, LogIn, PlusCircle, ChevronDown, LayoutDashboard } from 'lucide-react'
+import { Search, ShoppingBag, Menu, User, Bell, Gamepad2, Coins, CreditCard, Sparkles, LogIn, PlusCircle, ChevronDown, LayoutDashboard, MessageSquare } from 'lucide-react'
 import {
     Sheet,
     SheetContent,
@@ -21,6 +21,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState, useRef } from 'react'
 import { User as SupabaseUser } from '@supabase/supabase-js'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 // Mock Data for Mega Menu
 const MEGA_MENU_ITEMS: Record<string, any[]> = {
@@ -48,20 +51,37 @@ const MEGA_MENU_ITEMS: Record<string, any[]> = {
 
 export function Navbar() {
     const [user, setUser] = useState<SupabaseUser | null>(null)
+    const [userProfile, setUserProfile] = useState<any>(null)
     const [isAdmin, setIsAdmin] = useState(false)
     const [scrolled, setScrolled] = useState(false)
     const [activeMenu, setActiveMenu] = useState<string | null>(null)
     const supabase = createClient()
+    const router = useRouter()
     const navRef = useRef<HTMLDivElement>(null)
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut()
+        toast.success('ออกจากระบบเรียบร้อยแล้ว')
+        setUser(null)
+        setUserProfile(null)
+        setIsAdmin(false)
+        router.push('/')
+        router.refresh()
+    }
 
     useEffect(() => {
         const getUser = async () => {
             const { data: { user } } = await supabase.auth.getUser()
             setUser(user)
             if (user) {
-                const { data: profile } = await supabase.from('profiles').select('display_name, role').eq('id', user.id).single()
-                if (profile?.role === 'admin' || profile?.display_name === 'Exeria2142') {
-                    setIsAdmin(true)
+                // Fetch full profile (display_name, avatar_url, role)
+                const { data: profile } = await supabase.from('profiles').select('display_name, avatar_url, role').eq('id', user.id).single()
+
+                if (profile) {
+                    setUserProfile(profile)
+                    if (profile.role === 'admin' || ['Exeria2142', 'suprawee2929'].includes(profile.display_name)) {
+                        setIsAdmin(true)
+                    }
                 }
             }
         }
@@ -69,6 +89,14 @@ export function Navbar() {
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setUser(session?.user ?? null)
+            // If session changes (e.g. login), we might want to re-fetch profile.
+            if (session?.user) {
+                supabase.from('profiles').select('display_name, avatar_url, role').eq('id', session.user.id).single().then(({ data }) => {
+                    if (data) setUserProfile(data)
+                })
+            } else {
+                setUserProfile(null)
+            }
         })
 
         const handleScroll = () => {
@@ -164,7 +192,19 @@ export function Navbar() {
                             <MobileNavItem href="/browse?type=account" icon={<Gamepad2 />} label="ซื้อไอดีเกม" />
                             <MobileNavItem href="/browse?type=item" icon={<Coins />} label="ซื้อไอเท็ม" />
                             <MobileNavItem href="/browse?type=service" icon={<Sparkles />} label="จ้างดันแรงค์" />
-                            <MobileNavItem href="/sell" icon={<PlusCircle />} label="ลงขายสินค้า" className="text-indigo-400" />
+
+                            {user ? (
+                                <>
+                                    <MobileNavItem href="/chat" icon={<MessageSquare />} label="แชท/ข้อความ" />
+                                    <MobileNavItem href="/sell" icon={<PlusCircle />} label="ลงขายสินค้า" className="text-indigo-400" />
+                                </>
+                            ) : (
+                                <>
+                                    <div className="my-2 h-px bg-white/10" />
+                                    <MobileNavItem href="/login" icon={<LogIn />} label="เข้าสู่ระบบ" className="text-white" />
+                                    <MobileNavItem href="/sell" icon={<PlusCircle />} label="ลงขายสินค้า" className="text-indigo-400" />
+                                </>
+                            )}
                         </div>
                     </SheetContent>
                 </Sheet>
@@ -187,6 +227,11 @@ export function Navbar() {
 
                     {user ? (
                         <>
+                            <Button variant="ghost" size="icon" className="relative text-gray-400 hover:text-white hover:bg-white/10" asChild>
+                                <Link href="/chat">
+                                    <MessageSquare className="h-5 w-5" />
+                                </Link>
+                            </Button>
                             <Button variant="ghost" size="icon" className="relative text-gray-400 hover:text-white hover:bg-white/10">
                                 <Bell className="h-5 w-5" />
                                 <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-red-500 shadow-md" />
@@ -195,15 +240,15 @@ export function Navbar() {
                                 <DropdownMenuTrigger asChild>
                                     <Button variant="ghost" className="relative h-9 w-9 rounded-full ring-2 ring-white/10 hover:ring-indigo-500 transition-all">
                                         <Avatar className="h-9 w-9">
-                                            <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email || ''} />
-                                            <AvatarFallback>{user.email?.[0].toUpperCase()}</AvatarFallback>
+                                            <AvatarImage src={userProfile?.avatar_url || user.user_metadata?.avatar_url} alt={user.email || ''} />
+                                            <AvatarFallback>{(userProfile?.display_name || user.email)?.[0]?.toUpperCase()}</AvatarFallback>
                                         </Avatar>
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent className="w-56 bg-card border-white/10 text-white" align="end">
                                     <DropdownMenuLabel>
                                         <div className="flex flex-col space-y-1">
-                                            <p className="font-medium">{user.user_metadata?.full_name || 'User'}</p>
+                                            <p className="font-medium">{userProfile?.display_name || user.user_metadata?.full_name || 'User'}</p>
                                             <p className="text-xs text-muted-foreground">{user.email}</p>
                                         </div>
                                     </DropdownMenuLabel>
@@ -211,7 +256,7 @@ export function Navbar() {
                                     <DropdownMenuItem asChild className="focus:bg-white/10"><Link href="/profile">โปรไฟล์</Link></DropdownMenuItem>
                                     <DropdownMenuItem asChild className="focus:bg-white/10"><Link href="/orders">รายการซื้อขาย</Link></DropdownMenuItem>
                                     <DropdownMenuSeparator className="bg-white/10" />
-                                    <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={() => supabase.auth.signOut()}>
+                                    <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={handleLogout}>
                                         ออกจากระบบ
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>

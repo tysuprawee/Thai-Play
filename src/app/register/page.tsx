@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -37,12 +38,10 @@ export default function RegisterPage() {
 
         if (error) {
             setError(error.message)
+            toast.error(error.message)
             setLoading(false)
         } else {
-            // Supabase defaults to "check email" unless auto-confirm is on in dev.
-            // For MVP UX, we might assume auto-confirm or show message.
-            // But let's assume successful signup logs them in or asks for confirmation.
-            // If auto-confirm is enabled in Supabase project, they are logged in.
+            toast.success('สมัครสมาชิกสำเร็จ! ยินดีต้อนรับสู่ ThaiPlay')
             router.refresh()
             router.push('/')
         }
@@ -59,6 +58,7 @@ export default function RegisterPage() {
 
         if (error) {
             setError(error.message)
+            toast.error(error.message)
             setLoading(false)
         }
     }

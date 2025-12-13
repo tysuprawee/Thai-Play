@@ -29,7 +29,16 @@ export default function SellPage() {
     const [price, setPrice] = useState('')
     const [categoryId, setCategoryId] = useState('')
     const [type, setType] = useState('service')
+    const [stock, setStock] = useState('1')
     const [images, setImages] = useState<{ file: File, preview: string }[]>([])
+
+    // Specifications State
+    const [specs, setSpecs] = useState<{ key: string, value: string }[]>([])
+    const [newSpecKey, setNewSpecKey] = useState('')
+    const [newSpecValue, setNewSpecValue] = useState('')
+
+    // Tags State
+    const [tagsInput, setTagsInput] = useState('')
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
@@ -43,6 +52,18 @@ export default function SellPage() {
 
     const removeImage = (index: number) => {
         setImages(images.filter((_, i) => i !== index))
+    }
+
+    const addSpec = () => {
+        if (newSpecKey && newSpecValue) {
+            setSpecs([...specs, { key: newSpecKey, value: newSpecValue }])
+            setNewSpecKey('')
+            setNewSpecValue('')
+        }
+    }
+
+    const removeSpec = (index: number) => {
+        setSpecs(specs.filter((_, i) => i !== index))
     }
 
     useEffect(() => {
@@ -76,6 +97,12 @@ export default function SellPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
+        // Prepare Specs JSON
+        const specsJson = specs.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {})
+
+        // Prepare Tags Array
+        const tagsArray = tagsInput.split(',').map(t => t.trim()).filter(t => t.length > 0)
+
         // 1. Create Listing
         const { data: listingData, error: listingError } = await supabase.from('listings').insert({
             seller_id: user.id,
@@ -84,6 +111,9 @@ export default function SellPage() {
             description_th: description,
             price_min: parseFloat(price),
             listing_type: type,
+            stock: parseInt(stock) || 1,
+            specifications: specsJson,
+            tags: tagsArray,
             status: 'active'
         }).select()
 
@@ -123,22 +153,22 @@ export default function SellPage() {
         } catch (error: any) {
             console.error('Upload Error:', error)
             alert('เกิดข้อผิดพลาดในการอัพโหลดรูปภาพ: ' + error.message)
-            // Optional: Cleanup listing if upload fails? For MVP we keep it but warn user.
             setLoading(false)
         }
     }
 
     return (
-        <div className="container mx-auto py-10 max-w-2xl">
-            <Card>
+        <div className="container mx-auto py-10 max-w-2xl text-white">
+            <Card className="bg-[#1e202e] border-white/5 text-white">
                 <CardHeader>
                     <CardTitle className="text-2xl">ลงขายสินค้า / บริการ</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="space-y-2">
-                            <Label>ชื่อประกาศ</Label>
+                            <Label className="text-gray-300">ชื่อประกาศ</Label>
                             <Input
+                                className="bg-[#13151f] border-white/10"
                                 placeholder="เช่น รับจ้างดันแรงค์ Valorant หรือ ขายไอดี RoV"
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
@@ -148,38 +178,130 @@ export default function SellPage() {
 
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label>หมวดหมู่เกม</Label>
+                                <Label className="text-gray-300">หมวดหมู่เกม</Label>
                                 <Select onValueChange={setCategoryId} required>
-                                    <SelectTrigger>
+                                    <SelectTrigger className="bg-[#13151f] border-white/10">
                                         <SelectValue placeholder="เลือกเกม/บริการ" />
                                     </SelectTrigger>
-                                    <SelectContent>
+                                    <SelectContent className="bg-[#1e202e] border-white/10 text-white">
                                         {categories.map((cat) => (
-                                            <SelectItem key={cat.id} value={cat.id}>{cat.name_th}</SelectItem>
+                                            <SelectItem key={cat.id} value={cat.id} className="focus:bg-white/10">{cat.name_th}</SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
                             </div>
                             <div className="space-y-2">
-                                <Label>ประเภท</Label>
+                                <Label className="text-gray-300">ประเภท</Label>
                                 <Select onValueChange={setType} defaultValue="service">
-                                    <SelectTrigger>
+                                    <SelectTrigger className="bg-[#13151f] border-white/10">
                                         <SelectValue />
                                     </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="service">บริการ (Service)</SelectItem>
-                                        <SelectItem value="item">ไอเท็ม (Item)</SelectItem>
-                                        <SelectItem value="account">ไอดีเกม (Account)</SelectItem>
+                                    <SelectContent className="bg-[#1e202e] border-white/10 text-white">
+                                        <SelectItem value="service" className="focus:bg-white/10">บริการ (Service)</SelectItem>
+                                        <SelectItem value="item" className="focus:bg-white/10">ไอเท็ม (Item)</SelectItem>
+                                        <SelectItem value="account" className="focus:bg-white/10">ไอดีเกม (Account)</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
                         </div>
 
+                        {/* Required Specifications */}
+                        <div className="space-y-4 pt-4 border-t border-white/5">
+                            <Label className="text-lg font-semibold text-indigo-400 flex items-center gap-2">
+                                <span className="w-1 h-6 bg-indigo-500 rounded-full"></span>
+                                ข้อมูลจำเพาะ (Required Specifications)
+                            </Label>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label className="text-gray-300">วิธีการส่งมอบ (Delivery Method)</Label>
+                                    <Select
+                                        onValueChange={(val) => setSpecs(prev => [...prev.filter(s => s.key !== 'Delivery Method'), { key: 'Delivery Method', value: val }])}
+                                        defaultValue="Coordinated"
+                                    >
+                                        <SelectTrigger className="bg-[#13151f] border-white/10">
+                                            <SelectValue placeholder="เลือกวิธีส่งมอบ" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-[#1e202e] border-white/10 text-white">
+                                            <SelectItem value="Coordinated" className="focus:bg-white/10">นัดหมายส่งจอง (Coordinated)</SelectItem>
+                                            <SelectItem value="Automatic" className="focus:bg-white/10">ส่งอัตโนมัติ (Automatic)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-gray-300">ระยะเวลาส่งมอบ (Est. Time)</Label>
+                                    <Input
+                                        className="bg-[#13151f] border-white/10"
+                                        placeholder="เช่น 1 ชั่วโมง, 24 ชั่วโมง"
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setSpecs(prev => {
+                                                const filtered = prev.filter(s => s.key !== 'Estimated Time');
+                                                return val ? [...filtered, { key: 'Estimated Time', value: val }] : filtered;
+                                            })
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Custom Specifications Builder */}
+                        <div className="space-y-4 pt-4 border-t border-white/5">
+                            <Label className="text-lg font-semibold text-indigo-400 flex items-center gap-2">
+                                <span className="w-1 h-6 bg-indigo-500 rounded-full"></span>
+                                ข้อมูลเพิ่มเติม (Additional Specs)
+                            </Label>
+
+                            {/* List of added specs */}
+                            <div className="grid grid-cols-1 gap-2">
+                                {specs.filter(s => s.key !== 'Delivery Method' && s.key !== 'Estimated Time').map((spec, index) => (
+                                    <div key={index} className="flex gap-2 items-center">
+                                        <div className="flex-1 bg-white/5 p-2 rounded text-sm text-gray-300 border border-white/5">
+                                            <span className="font-bold text-white">{spec.key}:</span> {spec.value}
+                                        </div>
+                                        <Button type="button" variant="ghost" size="icon" onClick={() => removeSpec(index)} className="text-red-400 hover:text-red-300 hover:bg-red-500/10">
+                                            <X className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex gap-2">
+                                <Input
+                                    placeholder="ชื่อหัวข้อ (เช่น Server, Rank)"
+                                    value={newSpecKey}
+                                    onChange={(e) => setNewSpecKey(e.target.value)}
+                                    className="flex-1 bg-[#13151f] border-white/10"
+                                />
+                                <Input
+                                    placeholder="รายละเอียด (เช่น Asia, Diamond)"
+                                    value={newSpecValue}
+                                    onChange={(e) => setNewSpecValue(e.target.value)}
+                                    className="flex-1 bg-[#13151f] border-white/10"
+                                />
+                                <Button type="button" onClick={addSpec} variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border border-white/5">
+                                    เพิ่ม
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Tags Input */}
                         <div className="space-y-2">
-                            <Label>รายละเอียด</Label>
+                            <Label className="text-gray-300">แท็กค้นหา (Tags)</Label>
+                            <Input
+                                className="bg-[#13151f] border-white/10"
+                                placeholder="เช่น card, skin, rare, level 50 (คั่นด้วยเครื่องหมายจุลภาค ,)"
+                                value={tagsInput}
+                                onChange={(e) => setTagsInput(e.target.value)}
+                            />
+                            <p className="text-xs text-gray-500">ช่วยให้ผู้ซื้อค้นหาเจอได้ง่ายขึ้น</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-gray-300">รายละเอียด</Label>
                             <Textarea
                                 placeholder="อธิบายรายละเอียดสินค้าของคุณให้ชัดเจน..."
-                                className="h-32"
+                                className="h-32 bg-[#13151f] border-white/10"
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
                                 required
@@ -187,7 +309,7 @@ export default function SellPage() {
                         </div>
 
                         <div className="space-y-4">
-                            <Label>รูปภาพสินค้า (อย่างน้อย 1 รูป)</Label>
+                            <Label className="text-gray-300">รูปภาพสินค้า (อย่างน้อย 1 รูป)</Label>
                             <div className="grid grid-cols-4 gap-4">
                                 {images.map((img, index) => (
                                     <div key={index} className="relative aspect-square rounded-lg overflow-hidden border border-gray-700 group">
@@ -215,18 +337,33 @@ export default function SellPage() {
                             </div>
                         </div>
 
-                        <div className="space-y-2">
-                            <Label>ราคา (บาท)</Label>
-                            <Input
-                                type="number"
-                                placeholder="0.00"
-                                value={price}
-                                onChange={(e) => setPrice(e.target.value)}
-                                required
-                            />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label className="text-gray-300">ราคา (บาท)</Label>
+                                <Input
+                                    type="number"
+                                    className="bg-[#13151f] border-white/10"
+                                    placeholder="0.00"
+                                    value={price}
+                                    onChange={(e) => setPrice(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-gray-300">จำนวนสินค้า (Stock)</Label>
+                                <Input
+                                    type="number"
+                                    className="bg-[#13151f] border-white/10"
+                                    placeholder="1"
+                                    value={stock}
+                                    onChange={(e) => setStock(e.target.value)}
+                                    min="1"
+                                    required
+                                />
+                            </div>
                         </div>
 
-                        <Button type="submit" className="w-full" size="lg" disabled={loading}>
+                        <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500" size="lg" disabled={loading}>
                             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {loading ? 'กำลังสร้างประกาศ...' : 'ลงประกาศขายทันที'}
                         </Button>

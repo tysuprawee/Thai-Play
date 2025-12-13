@@ -185,7 +185,7 @@ export default function EditListingPage({ params }: { params: Promise<{ id: stri
     }
 
     return (
-        <div className="container py-10 max-w-2xl">
+        <div className="container mx-auto py-10 max-w-2xl">
             <Button variant="ghost" asChild className="mb-4 text-gray-400 hover:text-white">
                 <Link href="/profile">
                     <ArrowLeft className="w-4 h-4 mr-2" />

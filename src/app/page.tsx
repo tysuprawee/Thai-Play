@@ -30,7 +30,7 @@ export default async function Home() {
   return (
     <div className="flex flex-col min-h-screen bg-[#0f1016]">
       {/* Premium Hero Section */}
-      <section className="relative pt-32 pb-48 overflow-hidden">
+      <section className="relative pt-32 pb-24 overflow-hidden">
         {/* Background Elements */}
         <div className="absolute inset-0 z-0">
           <Image
@@ -63,19 +63,20 @@ export default async function Home() {
           {/* Centered Search Pill */}
           <div className="mx-auto max-w-3xl relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full blur opacity-30 group-hover:opacity-60 transition duration-500" />
-            <div className="relative flex items-center bg-[#1e202e] rounded-full border border-white/10 p-2 shadow-2xl">
+            <form action="/browse" className="relative flex items-center bg-[#1e202e] rounded-full border border-white/10 p-2 shadow-2xl">
               <div className="pl-6 pr-4 text-gray-400 border-r border-white/10 flex items-center gap-2 cursor-pointer hover:text-white transition-colors">
                 <span className="text-sm font-medium">ทุกหมวดหมู่</span>
               </div>
               <input
                 type="text"
+                name="q"
                 placeholder="ค้นหาเกม, ไอเท็ม, บริการ ฯลฯ..."
                 className="flex-1 bg-transparent border-none text-white placeholder-gray-500 focus:ring-0 focus:outline-none h-12 px-4"
               />
-              <Button size="lg" className="rounded-full bg-indigo-600 hover:bg-indigo-500 text-white px-8 h-12 shadow-lg shadow-indigo-500/20">
+              <Button type="submit" size="lg" className="rounded-full bg-indigo-600 hover:bg-indigo-500 text-white px-8 h-12 shadow-lg shadow-indigo-500/20">
                 <Search className="w-5 h-5" />
               </Button>
-            </div>
+            </form>
           </div>
 
           {/* Quick Tags */}
@@ -88,32 +89,8 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Trust Stats Bar */}
-      <section className="border-y border-white/5 bg-[#13151f] py-8">
-        <div className="container mx-auto flex flex-wrap justify-center gap-8 md:gap-16">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-500/10 rounded-lg text-green-500"><ShieldCheck className="w-6 h-6" /></div>
-            <div className="text-left">
-              <div className="text-2xl font-bold text-white">100%</div>
-              <div className="text-xs text-gray-400">การันตีคืนเงิน</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-500"><Users className="w-6 h-6" /></div>
-            <div className="text-left">
-              <div className="text-2xl font-bold text-white">50K+</div>
-              <div className="text-xs text-gray-400">ผู้ใช้งานจริง</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-500/10 rounded-lg text-purple-500"><Zap className="w-6 h-6" /></div>
-            <div className="text-left">
-              <div className="text-2xl font-bold text-white">5นาที</div>
-              <div className="text-xs text-gray-400">เฉลี่ยเวลาส่งมอบ</div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Trust Stats Bar (Moved to Hero) */}
+      {/* (Deleted from here) */}
 
       {/* Trending / Popular Games */}
       <section className="py-12 overflow-hidden">
@@ -159,6 +136,33 @@ export default async function Home() {
                   </Link>
                 )
               })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Trust Stats Bar (Re-ordered) */}
+      <section className="bg-[#13151f] py-10 border-t border-white/5">
+        <div className="container mx-auto flex flex-wrap justify-center gap-8 md:gap-16 animate-fade-in-up">
+          <div className="flex items-center gap-4 bg-[#1e202e] p-4 rounded-2xl border border-white/5 shadow-lg max-w-xs w-full justify-center md:justify-start">
+            <div className="p-3 bg-green-500/10 rounded-xl text-green-500 ring-1 ring-green-500/20"><ShieldCheck className="w-8 h-8" /></div>
+            <div className="text-left">
+              <div className="text-3xl font-bold text-white">100%</div>
+              <div className="text-sm text-gray-400">การันตีคืนเงิน</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 bg-[#1e202e] p-4 rounded-2xl border border-white/5 shadow-lg max-w-xs w-full justify-center md:justify-start">
+            <div className="p-3 bg-indigo-500/10 rounded-xl text-indigo-500 ring-1 ring-indigo-500/20"><Users className="w-8 h-8" /></div>
+            <div className="text-left">
+              <div className="text-3xl font-bold text-white">50K+</div>
+              <div className="text-sm text-gray-400">ผู้ใช้งานจริง</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 bg-[#1e202e] p-4 rounded-2xl border border-white/5 shadow-lg max-w-xs w-full justify-center md:justify-start">
+            <div className="p-3 bg-purple-500/10 rounded-xl text-purple-500 ring-1 ring-purple-500/20"><Zap className="w-8 h-8" /></div>
+            <div className="text-left">
+              <div className="text-3xl font-bold text-white">5นาที</div>
+              <div className="text-sm text-gray-400">เฉลี่ยเวลาส่งมอบ</div>
             </div>
           </div>
         </div>

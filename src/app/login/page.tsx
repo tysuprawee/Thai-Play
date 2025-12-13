@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -30,8 +31,10 @@ export default function LoginPage() {
 
         if (error) {
             setError(error.message)
+            toast.error(error.message)
             setLoading(false)
         } else {
+            toast.success('เข้าสู่ระบบสำเร็จ')
             router.refresh()
             router.push('/')
         }
@@ -48,6 +51,7 @@ export default function LoginPage() {
 
         if (error) {
             setError(error.message)
+            toast.error(error.message)
             setLoading(false)
         }
     }

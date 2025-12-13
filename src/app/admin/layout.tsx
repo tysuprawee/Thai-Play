@@ -27,7 +27,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 .eq('id', user.id)
                 .single()
 
-            if (profile?.role !== 'admin' && profile?.display_name !== 'Exeria2142') {
+            if (profile?.role !== 'admin' && !['Exeria2142', 'suprawee2929'].includes(profile?.display_name)) {
                 router.push('/') // Redirect non-admins
                 return
             }

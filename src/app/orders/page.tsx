@@ -7,7 +7,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
 import { formatPrice } from '@/lib/utils'
-import { Package, ShoppingBag } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { Star, Loader2, Package, ShoppingBag } from 'lucide-react'
+import { toast } from 'sonner'
 
 export default function OrdersPage() {
     const [buyingOrders, setBuyingOrders] = useState<any[]>([])
@@ -15,32 +20,75 @@ export default function OrdersPage() {
     const [loading, setLoading] = useState(true)
     const supabase = createClient()
 
+    // Review State
+    const [selectedOrder, setSelectedOrder] = useState<any>(null)
+    const [rating, setRating] = useState(5)
+    const [comment, setComment] = useState('')
+    const [submittingReview, setSubmittingReview] = useState(false)
+    const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
+
+    const fetchOrders = async () => {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+
+        // Fetch Buying (include Link to Review)
+        const { data: buying } = await supabase
+            .from('orders')
+            .select('*, listings(title_th, listing_type), profiles!seller_id(display_name), reviews(id)')
+            .eq('buyer_id', user.id)
+            .order('created_at', { ascending: false })
+
+        setBuyingOrders(buying || [])
+
+        // Fetch Selling
+        const { data: selling } = await supabase
+            .from('orders')
+            .select('*, listings(title_th, listing_type), profiles!buyer_id(display_name)')
+            .eq('seller_id', user.id)
+            .order('created_at', { ascending: false })
+
+        setSellingOrders(selling || [])
+        setLoading(false)
+    }
+
     useEffect(() => {
-        const fetchOrders = async () => {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return
-
-            // Fetch Buying
-            const { data: buying } = await supabase
-                .from('orders')
-                .select('*, listings(title_th, listing_type), profiles!seller_id(display_name)')
-                .eq('buyer_id', user.id)
-                .order('created_at', { ascending: false })
-
-            setBuyingOrders(buying || [])
-
-            // Fetch Selling
-            const { data: selling } = await supabase
-                .from('orders')
-                .select('*, listings(title_th, listing_type), profiles!buyer_id(display_name)')
-                .eq('seller_id', user.id)
-                .order('created_at', { ascending: false })
-
-            setSellingOrders(selling || [])
-            setLoading(false)
-        }
         fetchOrders()
     }, [])
+
+    const handleReviewSubmit = async () => {
+        if (!selectedOrder) return
+        setSubmittingReview(true)
+
+        try {
+            const { error } = await supabase.from('reviews').insert({
+                order_id: selectedOrder.id,
+                reviewer_id: selectedOrder.buyer_id, // Should be current user
+                seller_id: selectedOrder.seller_id,
+                rating: rating,
+                comment_th: comment
+            })
+
+            if (error) throw error
+
+            toast.success('ส่งรีวิวเรียบร้อยแล้ว')
+            setReviewDialogOpen(false)
+            setRating(5)
+            setComment('')
+            fetchOrders() // Refresh to show "Reviewed" status
+        } catch (error: any) {
+            console.error('Review Error:', error)
+            toast.error('ไม่สามารถส่งรีวิวได้: ' + error.message)
+        } finally {
+            setSubmittingReview(false)
+        }
+    }
+
+    const openReviewDialog = (order: any) => {
+        setSelectedOrder(order)
+        setRating(5)
+        setComment('')
+        setReviewDialogOpen(true)
+    }
 
     const getStatusBadge = (status: string) => {
         switch (status) {
@@ -69,26 +117,52 @@ export default function OrdersPage() {
                     <div className="space-y-4">
                         {buyingOrders.length === 0 && <div className="text-center py-10 text-gray-400">ยังไม่มีรายการสั่งซื้อ</div>}
                         {buyingOrders.map((order) => (
-                            <Link key={order.id} href={`/orders/${order.id}`}>
-                                <Card className="hover:bg-slate-50 transition-colors">
-                                    <CardContent className="p-4 flex items-center justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <div className="p-3 bg-indigo-100 rounded-full">
-                                                <ShoppingBag className="h-6 w-6 text-indigo-600" />
+                            <div key={order.id} className="relative group">
+                                <Link href={`/orders/${order.id}`}>
+                                    <Card className="hover:bg-slate-50 transition-colors cursor-pointer">
+                                        <CardContent className="p-4 flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                                <div className="p-3 bg-indigo-100 rounded-full">
+                                                    <ShoppingBag className="h-6 w-6 text-indigo-600" />
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold">{order.listings?.title_th}</div>
+                                                    <div className="text-sm text-gray-500">ผู้ขาย: {order.profiles?.display_name}</div>
+                                                    <div className="text-xs text-gray-400">Order ID: {order.id.slice(0, 8)}</div>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <div className="font-bold">{order.listings?.title_th}</div>
-                                                <div className="text-sm text-gray-500">ผู้ขาย: {order.profiles?.display_name}</div>
-                                                <div className="text-xs text-gray-400">Order ID: {order.id.slice(0, 8)}</div>
+                                            <div className="text-right">
+                                                <div className="mb-1">{getStatusBadge(order.status)}</div>
+                                                <div className="font-bold">{formatPrice(order.net_amount)}</div>
                                             </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="mb-1">{getStatusBadge(order.status)}</div>
-                                            <div className="font-bold">{formatPrice(order.net_amount)}</div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            </Link>
+                                        </CardContent>
+                                    </Card>
+                                </Link>
+
+                                {/* Review Button Overlay (Only for completed orders without review) */}
+                                {order.status === 'completed' && (!order.reviews || order.reviews.length === 0) && (
+                                    <div className="absolute top-4 right-32 z-10">
+                                        <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            className="bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+                                            onClick={(e) => {
+                                                e.preventDefault()
+                                                openReviewDialog(order)
+                                            }}
+                                        >
+                                            <Star className="w-3 h-3 mr-1" /> ให้คะแนน
+                                        </Button>
+                                    </div>
+                                )}
+                                {order.status === 'completed' && order.reviews && order.reviews.length > 0 && (
+                                    <div className="absolute top-4 right-32 z-10 pointer-events-none">
+                                        <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-200">
+                                            <Star className="w-3 h-3 mr-1 fill-gray-400 text-gray-400" /> ให้คะแนนแล้ว
+                                        </Badge>
+                                    </div>
+                                )}
+                            </div>
                         ))}
                     </div>
                 </TabsContent>
@@ -121,6 +195,53 @@ export default function OrdersPage() {
                     </div>
                 </TabsContent>
             </Tabs>
+
+            {/* Review Dialog */}
+            <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>ให้คะแนนสินค้าและผู้ขาย</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4 space-y-4">
+                        <div className="flex justify-center gap-2">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                                <button
+                                    key={star}
+                                    type="button"
+                                    onClick={() => setRating(star)}
+                                    className="focus:outline-none transition-transform hover:scale-110"
+                                >
+                                    <Star
+                                        className={`w-8 h-8 ${star <= rating ? 'fill-yellow-500 text-yellow-500' : 'text-gray-300'}`}
+                                    />
+                                </button>
+                            ))}
+                        </div>
+                        <div className="text-center text-sm font-medium text-gray-600">
+                            {rating === 5 ? 'ดีเยี่ยม' : rating === 4 ? 'ดีมาก' : rating === 3 ? 'พอใช้' : rating === 2 ? 'ควรปรับปรุง' : 'แย่'}
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>ความคิดเห็นเพิ่มเติม</Label>
+                            <Textarea
+                                placeholder="เล่าประสบการณ์ของคุณ..."
+                                value={comment}
+                                onChange={(e) => setComment(e.target.value)}
+                                rows={4}
+                            />
+                        </div>
+
+                        <Button
+                            className="w-full bg-indigo-600 hover:bg-indigo-500"
+                            onClick={handleReviewSubmit}
+                            disabled={submittingReview}
+                        >
+                            {submittingReview && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            ส่งรีวิว
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }
