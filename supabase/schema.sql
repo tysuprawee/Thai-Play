@@ -10,6 +10,8 @@ create table public.profiles (
   languages text[] default '{th}',
   location text default 'Thailand',
   seller_level text default 'new', -- new, verified, pro
+  status text default 'active', -- active, banned
+  role text default 'user', -- user, admin
   response_time_hours int default 24,
   last_active_at timestamp with time zone default timezone('utc'::text, now()),
   created_at timestamp with time zone default timezone('utc'::text, now()),
@@ -23,6 +25,7 @@ create table public.categories (
   slug text unique not null,
   type text not null check (type in ('game', 'service', 'item', 'other')),
   icon text,
+  fee_percent decimal(5,2) default 5.00,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -32,7 +35,7 @@ create table public.listings (
   seller_id uuid references public.profiles(id) not null,
   category_id uuid references public.categories(id) not null,
   title_th text not null,
-  description_th text,
+  description_th text,  
   listing_type text not null check (listing_type in ('service', 'item', 'account')),
   price_min decimal(10,2) not null,
   price_max decimal(10,2),
@@ -179,12 +182,7 @@ create trigger on_auth_user_created
   for each row execute procedure public.handle_new_user();
 
 -- SEED DATA (Categories)
+-- SEED DATA (Categories)
 insert into public.categories (name_th, slug, type) values
 ('RoV', 'rov', 'game'),
-('Valorant', 'valorant', 'game'),
-('Genshin Impact', 'genshin-impact', 'game'),
-('Free Fire', 'free-fire', 'game'),
-('Netflix', 'netflix', 'service'),
-('Youtube Premium', 'youtube-premium', 'service'),
-('รับจ้างดันแรงค์', 'rank-boosting', 'service'),
-('โค้ดเติมเน็ต', 'internet-topup', 'item');
+('Valorant', 'valorant', 'game');

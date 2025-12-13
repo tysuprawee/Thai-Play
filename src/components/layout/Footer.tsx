@@ -1,11 +1,11 @@
 import Link from 'next/link'
-import { ShoppingBag } from 'lucide-react'
+import { ShoppingBag, Facebook, Twitter, Instagram, Mail } from 'lucide-react'
 
 export function Footer() {
     return (
-        <footer className="border-t bg-background">
-            <div className="container py-8 md:py-12">
-                <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+        <footer className="bg-slate-950 text-slate-400 border-t border-white/10">
+            <div className="container mx-auto py-12 px-4 md:px-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
                     <div className="col-span-2 md:col-span-1">
                         <Link href="/" className="flex items-center space-x-2">
                             <ShoppingBag className="h-6 w-6 text-primary" />

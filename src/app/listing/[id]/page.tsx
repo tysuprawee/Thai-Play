@@ -15,7 +15,7 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
 
     const { data: listing } = await supabase
         .from('listings')
-        .select('*, profiles(*)')
+        .select('*, profiles(*), listing_media(*)')
         .eq('id', id)
         .single()
 
@@ -24,15 +24,38 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
     }
 
     return (
-        <div className="container py-8 px-4 md:px-6">
+        <div className="container mx-auto py-8 px-4 md:px-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
                 {/* Left Column: Images & Details */}
                 <div className="lg:col-span-2 space-y-6">
-                    {/* Image Carousel (Placeholder for now) */}
-                    <div className="aspect-video bg-gray-200 rounded-lg flex items-center justify-center text-gray-400">
-                        <span className="text-lg">No Images Available</span>
-                    </div>
+                    {/* Image Gallery */}
+                    {listing.listing_media && listing.listing_media.length > 0 ? (
+                        <div className="space-y-4">
+                            {/* Main (First) Image */}
+                            <div className="aspect-video relative rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
+                                <img
+                                    src={listing.listing_media[0].media_url}
+                                    alt={listing.title_th}
+                                    className="w-full h-full object-contain"
+                                />
+                            </div>
+                            {/* Thumbnails (if more than 1) */}
+                            {listing.listing_media.length > 1 && (
+                                <div className="grid grid-cols-4 gap-2">
+                                    {listing.listing_media.map((media: any) => (
+                                        <div key={media.id} className="aspect-video relative rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:ring-2 hover:ring-indigo-500">
+                                            <img src={media.media_url} alt="Thumbnail" className="w-full h-full object-cover" />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="aspect-video bg-gray-200 rounded-lg flex items-center justify-center text-gray-400">
+                            <span className="text-lg">No Images Available</span>
+                        </div>
+                    )}
 
                     <div>
                         <div className="flex items-center gap-2 mb-2">

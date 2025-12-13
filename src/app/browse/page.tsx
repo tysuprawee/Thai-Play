@@ -11,15 +11,19 @@ import { Search } from 'lucide-react'
 // Helper to construct query
 async function getListings(searchParams: { [key: string]: string | string[] | undefined }) {
     const supabase = await createClient()
-    let query = supabase.from('listings').select('*, profiles(display_name, seller_level)').eq('status', 'active')
+    // Fetch listings with profiles and media (limit 1 for thumbnail)
+    let query = supabase.from('listings')
+        .select(`
+            *, 
+            profiles(display_name, seller_level),
+            listing_media(media_url)
+        `)
+        .eq('status', 'active')
 
     if (searchParams.q) {
         query = query.ilike('title_th', `%${searchParams.q}%`)
     }
     if (searchParams.category) {
-        // Join with categories table to filter by slug
-        // Supabase join syntax via foreign key?
-        // Simpler: Fetch category ID first
         const { data: cat } = await supabase.from('categories').select('id').eq('slug', searchParams.category).single()
         if (cat) {
             query = query.eq('category_id', cat.id)
@@ -46,7 +50,7 @@ export default async function BrowsePage({
     const { data: categories } = await supabase.from('categories').select('*')
 
     return (
-        <div className="container py-8 px-4 md:px-6">
+        <div className="container mx-auto py-8 px-4 md:px-6">
             <div className="flex flex-col md:flex-row gap-8">
 
                 {/* Sidebar Filters */}
@@ -124,33 +128,44 @@ export default async function BrowsePage({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {listings && listings.length > 0 ? listings.map((item: any) => (
-                            <Link key={item.id} href={`/listing/${item.id}`}>
-                                <Card className="overflow-hidden hover:shadow-lg transition-shadow h-full flex flex-col">
-                                    <div className="aspect-video bg-gray-200 relative">
-                                        <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-                                            No Image
+                        {listings && listings.length > 0 ? listings.map((item: any) => {
+                            // Use first image if available
+                            const thumbnail = item.listing_media && item.listing_media.length > 0
+                                ? item.listing_media[0].media_url
+                                : null;
+
+                            return (
+                                <Link key={item.id} href={`/listing/${item.id}`}>
+                                    <Card className="overflow-hidden hover:shadow-lg transition-shadow h-full flex flex-col">
+                                        <div className="aspect-video bg-gray-200 relative">
+                                            {thumbnail ? (
+                                                <img src={thumbnail} alt={item.title_th} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                                                    No Image
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                    <CardContent className="p-4 flex-1 flex flex-col">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <Badge variant="secondary">
-                                                {item.listing_type}
-                                            </Badge>
-                                        </div>
-                                        <h3 className="font-bold line-clamp-1 mb-1">{item.title_th}</h3>
-                                        <p className="text-sm text-gray-500 line-clamp-2 mb-3 flex-1">{item.description_th}</p>
-                                        <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                                            <span className="text-lg font-bold text-indigo-600">{formatPrice(item.price_min)}</span>
-                                            <div className="flex items-center text-xs text-gray-500">
-                                                <div className="w-5 h-5 rounded-full bg-gray-200 mr-2" />
-                                                {item.profiles?.display_name || 'Seller'}
+                                        <CardContent className="p-4 flex-1 flex flex-col">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <Badge variant="secondary">
+                                                    {item.listing_type}
+                                                </Badge>
                                             </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            </Link>
-                        )) : (
+                                            <h3 className="font-bold line-clamp-1 mb-1">{item.title_th}</h3>
+                                            <p className="text-sm text-gray-500 line-clamp-2 mb-3 flex-1">{item.description_th}</p>
+                                            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                                                <span className="text-lg font-bold text-indigo-600">{formatPrice(item.price_min)}</span>
+                                                <div className="flex items-center text-xs text-gray-500">
+                                                    <div className="w-5 h-5 rounded-full bg-gray-200 mr-2" />
+                                                    {item.profiles?.display_name || 'Seller'}
+                                                </div>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                </Link>
+                            )
+                        }) : ( // End of map
                             <div className="col-span-full py-10 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed rounded-lg">
                                 <Search className="h-10 w-10 mb-4 opacity-50" />
                                 <p>ไม่พบรายการที่ค้นหา</p>
