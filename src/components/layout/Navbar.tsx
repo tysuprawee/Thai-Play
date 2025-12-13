@@ -49,7 +49,10 @@ const MEGA_MENU_ITEMS: Record<string, any[]> = {
     ]
 }
 
+import { usePresence } from '@/lib/hooks/usePresence'
+
 export function Navbar() {
+    usePresence()
     const [user, setUser] = useState<SupabaseUser | null>(null)
     const [userProfile, setUserProfile] = useState<any>(null)
     const [isAdmin, setIsAdmin] = useState(false)

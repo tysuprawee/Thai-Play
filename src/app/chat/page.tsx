@@ -1,39 +1,47 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Send, Search, MessageSquare } from 'lucide-react'
+import { Send, Search, MessageSquare, Image as ImageIcon, MoreVertical, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { getOrCreateConversation, deleteConversation, sendMessage } from '@/app/actions/chat'
 
 interface Profile {
     id: string
     display_name: string
     avatar_url: string
+    last_seen?: string
 }
 
 interface Message {
     id: string
     sender_id: string
-    receiver_id: string
     content: string
     created_at: string
     is_read: boolean
+    message_type: 'text' | 'image'
+    media_url?: string
 }
 
 interface Conversation {
+    id: string
     partner: Profile
-    lastMessage: Message
-    unreadCount: number
+    last_message_preview: string
+    updated_at: string
+    unread_count: number
 }
-
-import { Suspense } from 'react'
-
-// ... existing imports ...
 
 function ChatContent() {
     const supabase = createClient()
@@ -43,12 +51,31 @@ function ChatContent() {
     // State
     const [user, setUser] = useState<any>(null)
     const [conversations, setConversations] = useState<Conversation[]>([])
-    const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null)
+    const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
     const [messages, setMessages] = useState<Message[]>([])
     const [newMessage, setNewMessage] = useState('')
     const [loadingMessages, setLoadingMessages] = useState(false)
+    const [isUploading, setIsUploading] = useState(false)
+
+    // State for Image Preview
+    const [imageFile, setImageFile] = useState<File | null>(null)
+    const [imagePreview, setImagePreview] = useState<string | null>(null)
+    const [isPartnerTyping, setIsPartnerTyping] = useState(false)
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
     const scrollRef = useRef<HTMLDivElement>(null)
+    const fileInputRef = useRef<HTMLInputElement>(null)
+
+    // Scroll to bottom
+    const scrollToBottom = () => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+        }
+    }
+
+    useEffect(() => {
+        scrollToBottom()
+    }, [messages, isPartnerTyping, imagePreview])
 
     // Initial Load & Auth Check
     useEffect(() => {
@@ -61,107 +88,128 @@ function ChatContent() {
             setUser(user)
 
             // Check URL params for direct chat (e.g. from listing page)
-            const partnerId = searchParams.get('seller_id')
-            if (partnerId && partnerId !== user.id) {
-                setSelectedPartnerId(partnerId)
+            const sellerId = searchParams.get('seller_id')
+            if (sellerId && sellerId !== user.id) {
+                try {
+                    const convId = await getOrCreateConversation(sellerId)
+                    setSelectedConversationId(convId)
+                    // Remove param to clean URL
+                    router.replace('/chat')
+                } catch (error) {
+                    console.error(error)
+                    toast.error('Could not open chat')
+                }
             }
+
+            fetchConversations(user.id)
 
             fetchConversations(user.id)
         }
         init()
     }, [])
 
-    // ... (rest of the logic remains exactly the same, creating fetchConversations, useEffect for messages, handleSendMessage etc.)
-    // Note: I will need to copy the entire function body of the original component into ChatContent
-
-    // Fetch Conversations
+    // Fetch Conversations from DB
     const fetchConversations = async (userId: string) => {
-        const { data: msgs } = await supabase
-            .from('messages')
-            .select('*, sender:profiles!sender_id(*), receiver:profiles!receiver_id(*)')
-            .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-            .order('created_at', { ascending: false })
+        const { data: convs, error } = await supabase
+            .from('conversations')
+            .select(`
+                id,
+                last_message_preview,
+                updated_at,
+                hidden_for,
+                participant1:profiles!participant1_id(id, display_name, avatar_url, last_seen),
+                participant2:profiles!participant2_id(id, display_name, avatar_url, last_seen)
+            `)
+            .or(`participant1_id.eq.${userId},participant2_id.eq.${userId}`)
+            .order('updated_at', { ascending: false })
 
-        if (!msgs) return
+        if (error) {
+            console.error('Error fetching conversations:', error)
+            toast.error(`Error loading chats: ${error.message} (${error.code})`)
+            return
+        }
 
-        const convoMap = new Map<string, Conversation>()
+        if (!convs) return
 
-        msgs.forEach((msg: any) => {
-            const partnerId = msg.sender_id === userId ? msg.receiver_id : msg.sender_id
-            const partnerProfile = msg.sender_id === userId ? msg.receiver : msg.sender
+        // Filter out hidden chats and format
+        const formatted: Conversation[] = convs
+            .filter((c: any) => !c.hidden_for?.includes(userId)) // Client-side soft delete filter
+            .map((c: any) => {
+                const partner = c.participant1.id === userId ? c.participant2 : c.participant1
+                return {
+                    id: c.id,
+                    partner: partner,
+                    last_message_preview: c.last_message_preview || 'Start a conversation',
+                    updated_at: c.updated_at,
+                    unread_count: 0 // TODO: Add real unread count query if needed
+                }
+            })
 
-            if (!convoMap.has(partnerId)) {
-                convoMap.set(partnerId, {
-                    partner: partnerProfile,
-                    lastMessage: {
-                        id: msg.id,
-                        sender_id: msg.sender_id,
-                        receiver_id: msg.receiver_id,
-                        content: msg.content,
-                        created_at: msg.created_at,
-                        is_read: msg.is_read
-                    },
-                    unreadCount: 0
-                })
-            }
-
-            const convo = convoMap.get(partnerId)!
-            if (msg.receiver_id === userId && !msg.is_read) {
-                convo.unreadCount++
-            }
-        })
-
-        setConversations(Array.from(convoMap.values()))
+        setConversations(formatted)
     }
 
-    // Fetch Messages when Partner Selected
+    // Fetch Messages when Conversation Selected
     useEffect(() => {
-        if (!selectedPartnerId || !user) return
+        if (!selectedConversationId || !user) return
 
-        const fetchMessages = async () => {
+        const loadMessages = async () => {
             setLoadingMessages(true)
             const { data } = await supabase
                 .from('messages')
                 .select('*')
-                .or(`and(sender_id.eq.${user.id},receiver_id.eq.${selectedPartnerId}),and(sender_id.eq.${selectedPartnerId},receiver_id.eq.${user.id})`)
+                .eq('conversation_id', selectedConversationId)
                 .order('created_at', { ascending: true })
 
             if (data) setMessages(data)
             setLoadingMessages(false)
 
-            // Mark as read
-            await supabase
-                .from('messages')
-                .update({ is_read: true })
-                .eq('sender_id', selectedPartnerId)
-                .eq('receiver_id', user.id)
-                .is('is_read', false)
+            // Mark as read (simple updates)
+            /* 
+               In a real app, we'd batch this or do it on server. 
+               For now, client-side update is okay for MPV.
+            */
         }
 
-        fetchMessages()
+        loadMessages()
+    }, [selectedConversationId, user])
 
-        // Realtime Subscription
+    // Realtime Subscription for Active Chat
+    useEffect(() => {
+        if (!selectedConversationId || !user) return
+
         const channel = supabase
-            .channel('chat_room')
+            .channel(`chat:${selectedConversationId}`)
             .on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
                 table: 'messages',
-                filter: `receiver_id=eq.${user.id}`
+                filter: `conversation_id=eq.${selectedConversationId}`
             }, (payload) => {
                 const newMsg = payload.new as Message
-                if (newMsg.sender_id === selectedPartnerId) {
-                    setMessages(prev => [...prev, newMsg])
+                // Ignore my own messages (handled optimistically)
+                if (newMsg.sender_id === user.id) return
+
+                // Play Sound
+                new Audio('/sounds/notification.mp3').play().catch((e) => console.log('Audio play failed', e))
+
+                setMessages(prev => [...prev, newMsg])
+                fetchConversations(user.id) // Refresh sidebar
+            })
+            .on('broadcast', { event: 'typing' }, (payload) => {
+                if (payload.payload.userId !== user.id) {
+                    setIsPartnerTyping(true)
+                    // Auto-hide after 3 seconds
+                    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+                    typingTimeoutRef.current = setTimeout(() => setIsPartnerTyping(false), 3000)
                 }
-                // Refresh conversations list to update 'last message'
-                fetchConversations(user.id)
             })
             .subscribe()
 
         return () => {
+            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
             supabase.removeChannel(channel)
         }
-    }, [selectedPartnerId, user])
+    }, [selectedConversationId, user])
 
     // Scroll to bottom
     useEffect(() => {
@@ -170,49 +218,177 @@ function ChatContent() {
         }
     }, [messages])
 
-    const handleSendMessage = async (e: React.FormEvent) => {
-        e.preventDefault()
-        if (!newMessage.trim() || !selectedPartnerId || !user) return
+    const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
 
-        const msgContent = newMessage.trim()
-        setNewMessage('')
+        const previewUrl = URL.createObjectURL(file)
+        setImageFile(file)
+        setImagePreview(previewUrl)
+        // Reset file input so same file can be selected again if needed
+        if (fileInputRef.current) fileInputRef.current.value = ''
+    }
 
-        // Optimistic UI
-        const tempId = Date.now().toString()
-        const tempMsg: Message = {
-            id: tempId,
-            sender_id: user.id,
-            receiver_id: selectedPartnerId,
-            content: msgContent,
-            created_at: new Date().toISOString(),
-            is_read: false
-        }
-        setMessages(prev => [...prev, tempMsg])
+    const clearImage = () => {
+        setImageFile(null)
+        if (imagePreview) URL.revokeObjectURL(imagePreview)
+        setImagePreview(null)
+    }
+    const handleTyping = async () => {
+        if (!selectedConversationId || !user) return
 
-        const { error } = await supabase.from('messages').insert({
-            sender_id: user.id,
-            receiver_id: selectedPartnerId,
-            content: msgContent
+        await supabase.channel(`chat:${selectedConversationId}`).send({
+            type: 'broadcast',
+            event: 'typing',
+            payload: { userId: user.id }
         })
+    }
 
-        if (error) {
-            console.error('Failed to send', error)
-            // Rollback optimistic update
-            setMessages(prev => prev.filter(m => m.id !== tempId))
-        } else {
+    const handleSend = async (e?: React.FormEvent) => {
+        e?.preventDefault()
+        if ((!newMessage.trim() && !imageFile) || !selectedConversationId || !user) return
+
+        const content = newMessage.trim()
+        const fileToSend = imageFile
+
+        // Clear input immediately
+        setNewMessage('')
+        clearImage()
+
+        let optimisticMsg: Message = {
+            id: Date.now().toString(),
+            sender_id: user.id,
+            content: content,
+            created_at: new Date().toISOString(),
+            is_read: false,
+            message_type: 'text'
+        }
+
+        // Logic for Image Upload
+        if (fileToSend) {
+            optimisticMsg.message_type = 'image'
+            optimisticMsg.media_url = imagePreview || undefined // Use preview as optimistic url
+            optimisticMsg.content = 'Sent an image'
+        }
+
+        setMessages(prev => [...prev, optimisticMsg])
+
+        try {
+            let mediaUrl = undefined
+
+            if (fileToSend) {
+                const fileName = `${Date.now()}-${fileToSend.name}`
+                const { data, error } = await supabase.storage
+                    .from('chat-attachments')
+                    .upload(`${selectedConversationId}/${fileName}`, fileToSend)
+
+                if (error) throw error
+
+                const { data: { publicUrl } } = supabase.storage
+                    .from('chat-attachments')
+                    .getPublicUrl(data.path)
+
+                mediaUrl = publicUrl
+            }
+
+            // Send actual message
+            await sendMessage(selectedConversationId, content || (mediaUrl ? 'Sent an image' : ''), mediaUrl ? 'image' : 'text', mediaUrl)
+
+            // Refresh sidebar to show latest message
             fetchConversations(user.id)
+
+        } catch (error) {
+            console.error(error)
+            toast.error('Failed to send message')
+            // Rollback
+            setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id))
         }
     }
 
-    // Helper to get selected partner profile
-    const selectedPartnerProfile = conversations.find(c => c.partner.id === selectedPartnerId)?.partner
+    const handleDeleteChat = async () => {
+        if (!selectedConversationId) return
+        if (confirm('Are you sure you want to delete this chat? It will disappear from your list.')) {
+            await deleteConversation(selectedConversationId)
+            setSelectedConversationId(null)
+            if (user) fetchConversations(user.id)
+            toast.success('Chat deleted')
+        }
+    }
+
+    // Helper: Format Date for Headers
+    const formatDateHeader = (dateStr: string) => {
+        const date = new Date(dateStr)
+        const today = new Date()
+        if (date.toDateString() === today.toDateString()) return 'Today'
+        return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
+    }
+
+    // State for single conversation fallback
+    const [singleConversation, setSingleConversation] = useState<Conversation | null>(null)
+    const [loadingConversation, setLoadingConversation] = useState(false)
+
+    // Derived active conversation
+    const activeConvo = conversations.find(c => c.id === selectedConversationId) || singleConversation
+
+    // Fetch single conversation if selected but missing from list
+    useEffect(() => {
+        if (!selectedConversationId || activeConvo) return
+
+        const fetchSingle = async () => {
+            setLoadingConversation(true)
+            const { data: c, error } = await supabase
+                .from('conversations')
+                .select(`
+                    id,
+                    last_message_preview,
+                    updated_at,
+                    hidden_for,
+                    participant1:profiles!participant1_id(id, display_name, avatar_url, last_seen),
+                    participant2:profiles!participant2_id(id, display_name, avatar_url, last_seen)
+                `)
+                .eq('id', selectedConversationId)
+                .single()
+
+            if (error) {
+                console.error('Error fetching single conversation:', error)
+                toast.error('Could not load chat details')
+            } else if (c) {
+                // Handle potential array return from Supabase relations
+                const p1 = Array.isArray(c.participant1) ? c.participant1[0] : c.participant1
+                const p2 = Array.isArray(c.participant2) ? c.participant2[0] : c.participant2
+
+                const partner = p1.id === user?.id ? p2 : p1
+                setSingleConversation({
+                    id: c.id,
+                    partner: partner,
+                    last_message_preview: c.last_message_preview || 'Start a conversation',
+                    updated_at: c.updated_at,
+                    unread_count: 0
+                })
+            }
+            setLoadingConversation(false)
+        }
+
+        if (user) fetchSingle()
+    }, [selectedConversationId, activeConvo, user])
+
+    // ... rest of loading/fetching messages ...
+    const getPresenceStatus = (lastSeen?: string) => {
+        if (!lastSeen) return { text: 'Offline', color: 'text-gray-500' }
+        const diff = (new Date().getTime() - new Date(lastSeen).getTime()) / 1000 / 60 // mins
+        if (diff < 2) return { text: 'Online', color: 'text-green-500' }
+        if (diff < 60) return { text: `Last seen ${Math.floor(diff)}m ago`, color: 'text-gray-400' }
+        return { text: 'Offline', color: 'text-gray-500' }
+    }
+
+    const presence = activeConvo ? getPresenceStatus(activeConvo.partner.last_seen) : null
 
     return (
-        <div className="container mx-auto py-6 h-[calc(100vh-80px)]">
-            <div className="grid grid-cols-1 md:grid-cols-4 h-full gap-6 bg-[#1e202e] rounded-xl overflow-hidden border border-white/5">
+        <div className="container mx-auto py-4 md:py-6 h-[calc(100dvh-70px)] md:h-[calc(100vh-80px)] overscroll-none block">
+            <div className="grid grid-cols-1 md:grid-cols-4 h-full gap-4 md:gap-6 bg-[#1e202e] rounded-xl overflow-hidden border border-white/5">
 
                 {/* Sidebar */}
-                <div className="md:col-span-1 bg-[#13151f] border-r border-white/5 flex flex-col">
+                <div className={`${selectedConversationId ? 'hidden md:flex' : 'flex'} md:col-span-1 bg-[#13151f] border-r border-white/5 flex-col h-full`}>
                     <div className="p-4 border-b border-white/5">
                         <h2 className="text-xl font-bold text-white mb-4">ข้อความ (Chats)</h2>
                         <div className="relative">
@@ -223,11 +399,11 @@ function ChatContent() {
                     <div className="flex-1 overflow-y-auto">
                         {conversations.map(convo => (
                             <div
-                                key={convo.partner.id}
-                                onClick={() => setSelectedPartnerId(convo.partner.id)}
+                                key={convo.id}
+                                onClick={() => setSelectedConversationId(convo.id)}
                                 className={cn(
                                     "p-4 flex items-center gap-3 cursor-pointer transition-colors hover:bg-white/5",
-                                    selectedPartnerId === convo.partner.id ? "bg-white/5 border-l-4 border-indigo-500" : "border-l-4 border-transparent"
+                                    selectedConversationId === convo.id ? "bg-white/5 border-l-4 border-indigo-500" : "border-l-4 border-transparent"
                                 )}
                             >
                                 <Avatar className="w-10 h-10 border border-white/10">
@@ -238,83 +414,154 @@ function ChatContent() {
                                     <div className="flex justify-between items-baseline mb-1">
                                         <span className="font-medium text-white truncate">{convo.partner.display_name}</span>
                                         <span className="text-xs text-gray-500">
-                                            {new Date(convo.lastMessage.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            {new Date(convo.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-sm text-gray-400 truncate w-32">
-                                            {convo.lastMessage.sender_id === user?.id ? 'คุณ: ' : ''}{convo.lastMessage.content}
+                                            {convo.last_message_preview}
                                         </span>
-                                        {convo.unreadCount > 0 && (
-                                            <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-                                                {convo.unreadCount}
-                                            </span>
-                                        )}
                                     </div>
                                 </div>
                             </div>
                         ))}
-                        {conversations.length === 0 && (
-                            <div className="p-8 text-center text-gray-500">
-                                ยังไม่มีการสนทนา
-                            </div>
-                        )}
                     </div>
                 </div>
 
                 {/* Chat Area */}
-                <div className="md:col-span-3 flex flex-col bg-[#1e202e]">
-                    {selectedPartnerId ? (
+                <div className={`${!selectedConversationId ? 'hidden md:flex' : 'flex'} md:col-span-3 flex-col bg-[#1e202e] relative h-full overflow-hidden`}>
+                    {selectedConversationId && activeConvo ? (
                         <>
                             {/* Header */}
-                            <div className="p-4 border-b border-white/5 flex items-center justify-between">
+                            <div className="p-4 border-b border-white/5 flex items-center justify-between bg-[#13151f]/50 flex-none z-20">
                                 <div className="flex items-center gap-3">
+                                    <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setSelectedConversationId(null)}>
+                                        <X className="w-5 h-5" />
+                                    </Button>
                                     <Avatar className="w-10 h-10 border border-white/10">
-                                        <AvatarImage src={selectedPartnerProfile?.avatar_url} />
-                                        <AvatarFallback>{selectedPartnerProfile?.display_name?.[0]}</AvatarFallback>
+                                        <AvatarImage src={activeConvo.partner.avatar_url} />
+                                        <AvatarFallback>{activeConvo.partner.display_name?.[0]}</AvatarFallback>
                                     </Avatar>
                                     <div>
-                                        <div className="font-bold text-white">{selectedPartnerProfile?.display_name || 'Loading...'}</div>
-                                        <div className="text-xs text-green-400 flex items-center gap-1">
-                                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                                            ออนไลน์
+                                        <div className="font-bold text-white">{activeConvo.partner.display_name}</div>
+                                        <div className={cn("text-xs flex items-center gap-1", presence?.color)}>
+                                            {presence?.text === 'Online' && <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>}
+                                            {presence?.text}
                                         </div>
                                     </div>
                                 </div>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon">
+                                            <MoreVertical className="w-5 h-5 text-gray-400" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="bg-[#13151f] border-white/10 text-white">
+                                        <DropdownMenuItem className="text-red-400 focus:text-red-400 focus:bg-red-500/10" onClick={handleDeleteChat}>
+                                            <Trash2 className="w-4 h-4 mr-2" /> ลบแชท (Delete)
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
                             </div>
 
-                            {/* Messages */}
-                            <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
+                            {/* Messages Container */}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 overscroll-contain" ref={scrollRef}>
                                 {messages.map((msg, index) => {
                                     const isMe = msg.sender_id === user?.id
+                                    const showHeader = index === 0 || formatDateHeader(msg.created_at) !== formatDateHeader(messages[index - 1].created_at)
+
                                     return (
-                                        <div key={index} className={cn("flex", isMe ? "justify-end" : "justify-start")}>
-                                            <div className={cn(
-                                                "max-w-[70%] p-3 rounded-2xl text-sm leading-relaxed",
-                                                isMe ? "bg-indigo-600 text-white rounded-br-none" : "bg-[#2a2d3e] text-gray-200 rounded-bl-none"
-                                            )}>
-                                                {msg.content}
+                                        <div key={msg.id}>
+                                            {showHeader && (
+                                                <div className="flex justify-center my-4">
+                                                    <span className="text-[10px] uppercase tracking-widest text-gray-500 bg-[#13151f] px-2 py-1 rounded-full border border-white/5">
+                                                        {formatDateHeader(msg.created_at)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <div className={cn("flex", isMe ? "justify-end" : "justify-start")}>
+                                                <div className={cn(
+                                                    "max-w-[70%] p-3 rounded-2xl text-sm leading-relaxed",
+                                                    isMe ? "bg-indigo-600 text-white rounded-br-none" : "bg-[#2a2d3e] text-gray-200 rounded-bl-none"
+                                                )}>
+                                                    {msg.message_type === 'image' && msg.media_url ? (
+                                                        <div className="mb-2 rounded-lg overflow-hidden border border-white/10">
+                                                            <img src={msg.media_url} alt="Shared image" className="max-w-full h-auto" />
+                                                        </div>
+                                                    ) : (
+                                                        <p>{msg.content}</p>
+                                                    )}
+                                                    <div className={cn("text-[10px] mt-1 text-right opacity-70", isMe ? "text-indigo-200" : "text-gray-400")}>
+                                                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     )
                                 })}
-                                {messages.length === 0 && !loadingMessages && (
-                                    <div className="text-center text-gray-500 mt-10">
-                                        เริ่มการสนทนากับ {selectedPartnerProfile?.display_name}
+                                {isPartnerTyping && (
+                                    <div className="flex justify-start animate-fade-in">
+                                        <div className="bg-[#2a2d3e] p-3 rounded-2xl rounded-bl-none flex items-center gap-1">
+                                            <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                                            <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                                            <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></span>
+                                        </div>
                                     </div>
                                 )}
                             </div>
 
-                            {/* Input */}
-                            <div className="p-4 border-t border-white/5 bg-[#13151f]">
-                                <form onSubmit={handleSendMessage} className="flex gap-2">
+                            {/* Input Area */}
+                            <div className="p-4 border-t border-white/5 bg-[#13151f] flex-none z-10">
+
+                                {/* Image Preview Area */}
+                                {imagePreview && (
+                                    <div className="mb-4 flex items-center gap-4 bg-white/5 p-2 rounded-lg w-fit">
+                                        <div className="relative w-20 h-20 rounded-md overflow-hidden border border-white/10">
+                                            <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-xs text-gray-400 max-w-[150px] truncate">{imageFile?.name}</span>
+                                            <Button type="button" variant="ghost" size="sm" className="h-6 text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={clearImage}>
+                                                <X className="w-3 h-3 mr-1" /> Remove
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <form onSubmit={handleSend} className="flex gap-2 items-end">
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        className="hidden"
+                                        accept="image/*"
+                                        onChange={handleImageSelect}
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className={cn("text-gray-400 hover:text-white", imageFile ? "text-indigo-400" : "")}
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={isUploading}
+                                    >
+                                        <ImageIcon className="w-5 h-5" />
+                                    </Button>
                                     <Input
                                         value={newMessage}
-                                        onChange={(e) => setNewMessage(e.target.value)}
+                                        onChange={(e) => {
+                                            setNewMessage(e.target.value)
+                                            handleTyping()
+                                        }}
                                         placeholder="พิมพ์ข้อความ..."
                                         className="bg-[#0b0c14] border-white/10 text-white focus-visible:ring-indigo-500"
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault()
+                                                handleSend()
+                                            }
+                                        }}
                                     />
-                                    <Button type="submit" size="icon" className="bg-indigo-600 hover:bg-indigo-500" disabled={!newMessage.trim()}>
+                                    <Button type="submit" size="icon" className="bg-indigo-600 hover:bg-indigo-500" disabled={(!newMessage.trim() && !imageFile)}>
                                         <Send className="w-5 h-5" />
                                     </Button>
                                 </form>
@@ -322,10 +569,19 @@ function ChatContent() {
                         </>
                     ) : (
                         <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
-                            <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
-                                <MessageSquare className="w-8 h-8 opacity-50" />
-                            </div>
-                            <p>เลือกการสนทนาเพื่อเริ่มแชท</p>
+                            {loadingConversation ? (
+                                <div className="text-center">
+                                    <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                                    <p>Loading chat...</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                                        <MessageSquare className="w-8 h-8 opacity-50" />
+                                    </div>
+                                    <p>Select a conversation to start chatting</p>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>
