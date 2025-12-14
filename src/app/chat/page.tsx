@@ -211,10 +211,20 @@ export function ChatContent() {
     useEffect(() => {
         if (!selectedConversationId || !user) return
 
+        const channel = supabase.channel(`active-chat-${selectedConversationId}`)
+
         // 1. Mark as read immediately in UI (optimistic) and DB
         const markReadAndClearSidebar = async () => {
-            // Optimistically clear sidebar count for this valid chat
+            // Optimistically clear sidebar count
             setConversations(prev => prev.map(c => c.id === selectedConversationId ? { ...c, unread_count: 0 } : c))
+
+            // Send Broadcast: "I have read this chat"
+            // This notifies the other user instantly without waiting for DB replication
+            await channel.send({
+                type: 'broadcast',
+                event: 'read-receipt',
+                payload: { userId: user.id, conversationId: selectedConversationId }
+            })
 
             await supabase
                 .from('messages')
@@ -240,37 +250,48 @@ export function ChatContent() {
         }
         loadMessages()
 
-        const channel = supabase
-            .channel(`active-chat-${selectedConversationId}`)
+        // SUBSCRIBE
+        channel
+            // Listen for Broadcast Read Receipts
+            .on('broadcast', { event: 'read-receipt' }, (payload) => {
+                console.log('ChatPage: Read Receipt Broadcast received', payload)
+                // If the OTHER user read our messages, mark all as read locally
+                if (payload.payload.userId !== user.id) {
+                    setMessages(prev => prev.map(m => (!m.is_read ? { ...m, is_read: true } : m)))
+                }
+            })
+            // INSERT: New Messages
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversationId}` }, async (payload) => {
                 const newMsg = payload.new as Message
                 if (newMsg.sender_id !== user.id) {
+                    // We received a message while active -> Mark read immediately
                     await supabase.from('messages').update({ is_read: true }).eq('id', newMsg.id)
                     newMsg.is_read = true
+
+                    // Notify sender we read it
+                    channel.send({
+                        type: 'broadcast',
+                        event: 'read-receipt',
+                        payload: { userId: user.id, conversationId: selectedConversationId }
+                    })
                 }
                 if (newMsg.sender_id === user.id) return
                 setMessages(prev => [...prev, newMsg])
-
-                // Also refresh sidebar so 'last message' updates
                 fetchConversations(user.id)
             })
+            // UPDATE: DB Fallback for Read Receipts
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
                 console.log('ChatPage: UPDATE payload active chat:', payload)
                 const updatedMsg = payload.new as Message
-
-                // If it's a read receipt update from the OTHER user
                 if (updatedMsg.is_read) {
                     setMessages(prev => prev.map(m => m.id === updatedMsg.id ? { ...m, is_read: true } : m))
-                } else {
-                    setMessages(prev => {
-                        if (prev.some(m => m.id === updatedMsg.id)) {
-                            return prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m)
-                        }
-                        return prev
-                    })
                 }
             })
-            .subscribe()
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    // Retrigger mark read to ensure broadcast goes through if needed
+                }
+            })
 
         return () => {
             supabase.removeChannel(channel)
