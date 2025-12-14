@@ -5,6 +5,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Toaster } from "sonner";
 import { cn } from "@/lib/utils";
+import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 
 const kanit = Kanit({
   subsets: ["latin", "thai"],
@@ -26,10 +27,12 @@ export default function RootLayout({
     <html lang="th">
       <body className={cn(kanit.className, "min-h-screen bg-background font-sans antialiased")}>
         <div className="relative flex min-h-screen flex-col">
-          <Navbar />
-          <main className="flex-1">{children}</main>
-          <Footer />
-          <Toaster richColors position="top-center" />
+          <LanguageProvider>
+            <Navbar />
+            <main className="flex-1">{children}</main>
+            <Footer />
+            <Toaster richColors position="top-center" />
+          </LanguageProvider>
         </div>
       </body>
     </html>

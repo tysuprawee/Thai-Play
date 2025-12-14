@@ -5,11 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
-import { Badge } from '@/components/ui/badge'
-import { Send, CheckCircle, AlertTriangle, ShieldCheck, Star } from 'lucide-react'
-import { formatPrice } from '@/lib/utils'
+import { Send, CheckCircle, AlertTriangle, ShieldCheck, Star, Package, Clock, MessageSquare } from 'lucide-react'import { formatPrice } from '@/lib/utils'
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params)
@@ -119,6 +115,18 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
         if (!confirm('ยืนยันการเปลี่ยนแปลงสถานะ?')) return
         await supabase.from('orders').update({ status }).eq('id', order.id)
         window.location.reload() // Simple reload to refresh state
+    }
+
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case 'pending_payment': return <Badge variant="outline" className="text-yellow-400 border-yellow-400">รอชำระเงิน</Badge>
+            case 'escrowed': return <Badge className="bg-blue-600 border-0">เงินเข้าระบบแล้ว (Escrow)</Badge>
+            case 'delivered': return <Badge className="bg-purple-600 border-0">รอตรวจสอบ</Badge>
+            case 'pending_release': return <Badge className="bg-orange-500 border-0 animate-pulse">ตรวจสอบความปลอดภัย (24-72 ชม.)</Badge>
+            case 'completed': return <Badge className="bg-green-600 border-0">สำเร็จ</Badge>
+            case 'cancelled': return <Badge variant="destructive" className="border-0">ยกเลิก</Badge>
+            default: return <Badge variant="secondary">{status}</Badge>
+        }
     }
 
     if (loading) return <div className="p-10 text-center text-white">Loading...</div>
@@ -301,43 +309,3 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     )
 }
 
-function Package(props: any) {
-    return (
-        <svg
-            {...props}
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        >
-            <path d="m7.5 4.27 9 5.15" />
-            <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-            <path d="m3.3 7 8.7 5 8.7-5" />
-            <path d="M12 22V12" />
-        </svg>
-    )
-}
-
-function MessageSquare(props: any) {
-    return (
-        <svg
-            {...props}
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        >
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-    )
-}

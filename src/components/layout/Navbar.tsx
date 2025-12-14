@@ -50,8 +50,10 @@ const MEGA_MENU_ITEMS: Record<string, any[]> = {
 }
 
 import { usePresence } from '@/lib/hooks/usePresence'
+import { useLanguage } from '@/lib/i18n/LanguageContext'
 
 export function Navbar() {
+    const { t } = useLanguage()
     usePresence()
     const [user, setUser] = useState<SupabaseUser | null>(null)
     const [userProfile, setUserProfile] = useState<any>(null)
@@ -64,7 +66,7 @@ export function Navbar() {
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
-        toast.success('ออกจากระบบเรียบร้อยแล้ว')
+        toast.success(t.common.success)
         setUser(null)
         setUserProfile(null)
         setIsAdmin(false)
@@ -137,7 +139,7 @@ export function Navbar() {
                             <ShoppingBag className="h-6 w-6 text-white" />
                         </div>
                         <span className="hidden font-bold text-xl tracking-tight sm:inline-block bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
-                            ThaiPlay
+                            {t.navbar.brand}
                         </span>
                     </Link>
 
@@ -146,7 +148,7 @@ export function Navbar() {
                             id="account"
                             href="/browse?type=account"
                             icon={<Gamepad2 className="w-4 h-4" />}
-                            label="ไอดีเกม"
+                            label={t.navbar.account}
                             activeMenu={activeMenu}
                             onHover={setActiveMenu}
                         />
@@ -154,7 +156,7 @@ export function Navbar() {
                             id="item"
                             href="/browse?type=item"
                             icon={<Coins className="w-4 h-4" />}
-                            label="ไอเท็ม"
+                            label={t.navbar.item}
                             activeMenu={activeMenu}
                             onHover={setActiveMenu}
                         />
@@ -162,7 +164,7 @@ export function Navbar() {
                             id="service"
                             href="/browse?type=service"
                             icon={<Sparkles className="w-4 h-4" />}
-                            label="บริการ"
+                            label={t.navbar.service}
                             activeMenu={activeMenu}
                             onHover={setActiveMenu}
                         />
@@ -170,7 +172,7 @@ export function Navbar() {
                             id="topup"
                             href="/browse?type=topup"
                             icon={<CreditCard className="w-4 h-4" />}
-                            label="เติมเกม"
+                            label={t.navbar.topup}
                             activeMenu={activeMenu}
                             onHover={setActiveMenu}
                         /> */}
@@ -189,23 +191,23 @@ export function Navbar() {
                             <div className="bg-indigo-600 p-2 rounded-lg">
                                 <ShoppingBag className="h-5 w-5 text-white" />
                             </div>
-                            <span className="font-bold text-lg text-white">ThaiPlay</span>
+                            <span className="font-bold text-lg text-white">{t.navbar.brand}</span>
                         </Link>
                         <div className="flex flex-col gap-2">
-                            <MobileNavItem href="/browse?type=account" icon={<Gamepad2 />} label="ซื้อไอดีเกม" />
-                            <MobileNavItem href="/browse?type=item" icon={<Coins />} label="ซื้อไอเท็ม" />
-                            <MobileNavItem href="/browse?type=service" icon={<Sparkles />} label="จ้างดันแรงค์" />
+                            <MobileNavItem href="/browse?type=account" icon={<Gamepad2 />} label={t.navbar.buy_account} />
+                            <MobileNavItem href="/browse?type=item" icon={<Coins />} label={t.navbar.buy_item} />
+                            <MobileNavItem href="/browse?type=service" icon={<Sparkles />} label={t.navbar.hire_rank} />
 
                             {user ? (
                                 <>
-                                    <MobileNavItem href="/chat" icon={<MessageSquare />} label="แชท/ข้อความ" />
-                                    <MobileNavItem href="/sell" icon={<PlusCircle />} label="ลงขายสินค้า" className="text-indigo-400" />
+                                    <MobileNavItem href="/chat" icon={<MessageSquare />} label={t.navbar.chat} />
+                                    <MobileNavItem href="/sell" icon={<PlusCircle />} label={t.navbar.sell} className="text-indigo-400" />
                                 </>
                             ) : (
                                 <>
                                     <div className="my-2 h-px bg-white/10" />
-                                    <MobileNavItem href="/login" icon={<LogIn />} label="เข้าสู่ระบบ" className="text-white" />
-                                    <MobileNavItem href="/sell" icon={<PlusCircle />} label="ลงขายสินค้า" className="text-indigo-400" />
+                                    <MobileNavItem href="/login" icon={<LogIn />} label={t.navbar.login} className="text-white" />
+                                    <MobileNavItem href="/sell" icon={<PlusCircle />} label={t.navbar.sell} className="text-indigo-400" />
                                 </>
                             )}
                         </div>
@@ -216,14 +218,14 @@ export function Navbar() {
                 <div className="flex items-center gap-3">
                     <Button variant="default" size="sm" className="hidden md:flex bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white border-0 shadow-lg shadow-indigo-500/20" asChild>
                         <Link href="/sell">
-                            <PlusCircle className="mr-2 h-4 w-4" /> ลงขาย
+                            <PlusCircle className="mr-2 h-4 w-4" /> {t.navbar.sell}
                         </Link>
                     </Button>
 
                     {isAdmin && (
                         <Button variant="ghost" size="sm" className="hidden md:flex text-indigo-400 hover:text-indigo-300 hover:bg-white/10" asChild>
                             <Link href="/admin">
-                                <LayoutDashboard className="mr-2 h-4 w-4" /> Admin
+                                <LayoutDashboard className="mr-2 h-4 w-4" /> {t.navbar.admin}
                             </Link>
                         </Button>
                     )}
@@ -256,11 +258,12 @@ export function Navbar() {
                                         </div>
                                     </DropdownMenuLabel>
                                     <DropdownMenuSeparator className="bg-white/10" />
-                                    <DropdownMenuItem asChild className="focus:bg-white/10"><Link href="/profile">โปรไฟล์</Link></DropdownMenuItem>
-                                    <DropdownMenuItem asChild className="focus:bg-white/10"><Link href="/orders">รายการซื้อขาย</Link></DropdownMenuItem>
+                                    <DropdownMenuItem asChild className="focus:bg-white/10"><Link href="/profile">{t.navbar.profile}</Link></DropdownMenuItem>
+                                    <DropdownMenuItem asChild className="focus:bg-white/10"><Link href="/orders">{t.navbar.orders}</Link></DropdownMenuItem>
+                                    <DropdownMenuItem asChild className="focus:bg-white/10"><Link href="/settings">{t.navbar.settings}</Link></DropdownMenuItem>
                                     <DropdownMenuSeparator className="bg-white/10" />
                                     <DropdownMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={handleLogout}>
-                                        ออกจากระบบ
+                                        {t.navbar.logout}
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
@@ -268,7 +271,7 @@ export function Navbar() {
                     ) : (
                         <Button variant="ghost" size="sm" className="hidden md:flex text-gray-300 hover:text-white hover:bg-white/10" asChild>
                             <Link href="/login">
-                                <LogIn className="mr-2 h-4 w-4" /> เข้าสู่ระบบ
+                                <LogIn className="mr-2 h-4 w-4" /> {t.navbar.login}
                             </Link>
                         </Button>
                     )}
