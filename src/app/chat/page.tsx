@@ -231,30 +231,38 @@ export function ChatContent() {
 
         return () => {
             channels.forEach(ch => supabase.removeChannel(ch))
-            // Clear all timeouts
-            Object.values(typingTimeouts.current).forEach(t => clearTimeout(t))
+            // Do NOT clear timeouts here, or the "typing off" event will never fire if the effect re-runs (e.g. on new message)
         }
     }, [conversations, user]) // Re-subscribes if list changes (new chat added)
+
 
     // Specific Subscription for Active Chat (Read Receipts + Messages list)
     useEffect(() => {
         if (!selectedConversationId || !user) return
 
         const channel = supabase
-            .channel(`active-chat:${selectedConversationId}`)
+            .channel(`active-chat-${selectedConversationId}`)
+            // INSERT: Filter by conversation_id works (column present on insert)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversationId}` }, async (payload) => {
                 const newMsg = payload.new as Message
                 if (newMsg.sender_id !== user.id) {
-                    // Mark read immediately if window focused (implied)
                     await supabase.from('messages').update({ is_read: true }).eq('id', newMsg.id)
                     newMsg.is_read = true
                 }
                 if (newMsg.sender_id === user.id) return
                 setMessages(prev => [...prev, newMsg])
             })
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversationId}` }, (payload) => {
+            // UPDATE: Filter usually FAILS (column missing on update). Listen globally for this table and match ID.
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
                 const updatedMsg = payload.new as Message
-                setMessages(prev => prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m))
+                // Functional update to access latest state without dependency loop
+                setMessages(prev => {
+                    // Only update if we have this message
+                    if (prev.some(m => m.id === updatedMsg.id)) {
+                        return prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m)
+                    }
+                    return prev
+                })
             })
             .subscribe()
 

@@ -3,14 +3,29 @@
 import { useEffect, useState, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Send, CheckCircle, AlertTriangle, ShieldCheck, Star, Package, Clock, MessageSquare } from 'lucide-react'
+import { CheckCircle, Clock, Package, ShieldCheck, AlertTriangle, Star, Copy, ExternalLink, Sparkles, MessageSquare, Send } from 'lucide-react'
 import { formatPrice } from '@/lib/utils'
 import { PromptPayQR } from '@/components/payment/PromptPayQR'
+import { confirmPayment, confirmDelivery, confirmReceipt, disputeOrder, mockPaymentSuccess } from '@/app/actions/order'
+import { submitReview as submitReviewAction } from '@/app/actions/review'
+import { toast } from 'sonner'
+import Link from 'next/link'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params)
@@ -19,7 +34,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     const [messages, setMessages] = useState<any[]>([])
     const [newMessage, setNewMessage] = useState('')
     const [currentUser, setCurrentUser] = useState<any>(null)
-    const [rating, setRating] = useState(0)
+    const [rating, setRating] = useState(5)
     const [reviewComment, setReviewComment] = useState('')
     const [existingReview, setExistingReview] = useState<any>(null)
     const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -104,27 +119,60 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
         e.preventDefault()
         if (rating === 0) return alert('กรุณาให้คะแนน')
 
-        const { error } = await supabase.from('reviews').insert({
-            order_id: order.id,
-            reviewer_id: currentUser.id,
-            seller_id: order.seller_id,
-            rating,
-            comment_th: reviewComment
-        })
-
-        if (error) {
-            alert(error.message)
-        } else {
-            // toast.success('ขอบคุณสำหรับรีวิว!') // Using alert for now if toast not imported, or assumes I'll add toast
+        try {
+            await submitReviewAction(order.id, rating, reviewComment)
             alert('ขอบคุณสำหรับรีวิว! ระบบจะพาคุณกลับหน้าหลัก')
             router.push('/')
+        } catch (error: any) {
+            alert(error.message || 'Failed to submit review')
         }
     }
 
     const updateStatus = async (status: string) => {
         if (!confirm('ยืนยันการเปลี่ยนแปลงสถานะ?')) return
-        await supabase.from('orders').update({ status }).eq('id', order.id)
-        window.location.reload() // Simple reload to refresh state
+        try {
+            if (status === 'delivered') {
+                await confirmDelivery(id)
+                toast.success('Confirmed delivery')
+            } else if (status === 'completed') {
+                await confirmReceipt(id)
+                toast.success('Order completed')
+            } else if (status === 'escrowed') {
+                await confirmPayment(id)
+                toast.success('Payment confirmed')
+            } else {
+                // Fallback
+                await supabase.from('orders').update({ status }).eq('id', order.id)
+            }
+            // Reload to reflect changes (server action revalidate doesn't always hot reload client state immediately if relying on props)
+            window.location.reload()
+        } catch (error) {
+            toast.error('Failed to update status')
+        }
+    }
+
+    const handleMockPayment = async () => {
+        try {
+            await mockPaymentSuccess(id)
+            toast.success('Mock Payment Successful')
+            window.location.reload()
+        } catch (e) {
+            toast.error('Mock Payment Failed')
+        }
+    }
+
+    const handleDispute = async () => {
+        if (!confirm('Are you sure you want to report an issue? Admin will be notified.')) return
+        const reason = prompt('Please describe the issue:')
+        if (!reason) return
+
+        try {
+            await disputeOrder(id, reason)
+            toast.success('Issue reported')
+            window.location.reload()
+        } catch (e) {
+            toast.error('Failed to report issue')
+        }
     }
 
     const getStatusBadge = (status: string) => {
@@ -162,6 +210,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         <Separator className="bg-white/5" />
 
                         {/* Action Buttons based on Status */}
+                        {/* Action Buttons based on Status */}
                         {order.status === 'pending_payment' && isBuyer && (
                             <div className="space-y-4">
                                 <div className="bg-[#13151f] p-6 rounded-xl border border-white/10 flex flex-col items-center">
@@ -171,42 +220,55 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                                         ยอดโอน: <span className="text-indigo-400 font-bold">{formatPrice(order.net_amount)}</span>
                                     </p>
                                 </div>
-                                <Button className="w-full bg-green-600 hover:bg-green-700 h-12 text-lg" onClick={() => updateStatus('escrowed')}>
-                                    <ShieldCheck className="mr-2 h-5 w-5" /> แจ้งชำระเงิน (แนบสลิป)
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Button variant="outline" className="border-green-500/50 text-green-400 hover:bg-green-500/10" onClick={() => handleMockPayment()}>
+                                        <Sparkles className="mr-2 h-4 w-4" /> Mock Success
+                                    </Button>
+                                    <Button className="bg-green-600 hover:bg-green-700" onClick={() => updateStatus('escrowed')}>
+                                        <ShieldCheck className="mr-2 h-4 w-4" /> แจ้งชำระเงิน
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        {order.status === 'escrowed' && isSeller && (
+                            <div className="space-y-3">
+                                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-sm text-blue-200">
+                                    <h4 className="font-bold mb-1">คำแนะนำ</h4>
+                                    <p className="text-xs opacity-80">เมื่อส่งมอบสินค้า/รหัสให้ผู้ซื้อแล้ว กรุณากดปุ่มด้านล่าง</p>
+                                </div>
+                                <Button className="w-full bg-indigo-600 hover:bg-indigo-500" onClick={() => updateStatus('delivered')}>
+                                    <Package className="mr-2 h-4 w-4" /> แจ้งส่งมอบงาน/ของ
                                 </Button>
                             </div>
                         )}
-                        {order.status === 'escrowed' && isSeller && (
-                            <Button className="w-full bg-indigo-600 hover:bg-indigo-500" onClick={() => updateStatus('delivered')}>
-                                <Package className="mr-2 h-4 w-4" /> แจ้งส่งมอบงาน/ของ
-                            </Button>
-                        )}
-                        {(order.status === 'delivered' || order.status === 'escrowed') && isBuyer && (
-                            <Button className="w-full bg-orange-500 hover:bg-orange-600" onClick={() => updateStatus('pending_release')}>
-                                <ShieldCheck className="mr-2 h-4 w-4" /> ยืนยันรับของ (เริ่มตรวจสอบความปลอดภัย)
-                            </Button>
-                        )}
-                        {order.status === 'pending_release' && (
+
+                        {order.status === 'delivered' && isBuyer && (
                             <div className="space-y-3">
                                 <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded-lg text-sm text-orange-200">
-                                    <div className="font-bold flex items-center gap-2 mb-1">
-                                        <Clock className="w-4 h-4" />
-                                        อยู่ระหว่างตรวจสอบ (24-72 ชม.)
-                                    </div>
-                                    <p className="text-xs opacity-80">
-                                        ระบบกำลังตรวจสอบความปลอดภัยเพื่อป้องกันการฉ้อโกง เงินจะถูกโอนให้ผู้ขายอัตโนมัติเมื่อผ่านการตรวจสอบ
-                                    </p>
+                                    <h4 className="font-bold mb-1">ตรวจสอบสินค้า</h4>
+                                    <p className="text-xs opacity-80">กรุณาตรวจสอบสินค้าให้เรียบร้อยก่อนกดยืนยัน หากกดยืนยันแล้วระบบจะโอนเงินให้ผู้ขายทันที</p>
+                                    {order.auto_confirm_at && (
+                                        <div className="mt-2 text-xs font-mono bg-black/20 p-1 rounded">
+                                            Auto-complete: {new Date(order.auto_confirm_at).toLocaleString()}
+                                        </div>
+                                    )}
                                 </div>
-                                {/* Admin Override / Mock System Release */}
-                                <Button variant="outline" className="w-full border-green-500/30 text-green-400 hover:bg-green-500/10" onClick={() => updateStatus('completed')}>
-                                    <CheckCircle className="mr-2 h-4 w-4" /> [Admin] อนุมัติการโอนเงิน
+                                <Button className="w-full bg-orange-500 hover:bg-orange-600" onClick={() => updateStatus('completed')}>
+                                    <ShieldCheck className="mr-2 h-4 w-4" /> ยืนยันรับของ (โอนเงินให้ผู้ขาย)
                                 </Button>
                             </div>
                         )}
+
                         {order.status === 'completed' && (
                             <div className="space-y-4">
                                 <div className="bg-green-500/10 text-green-400 p-3 rounded text-center text-sm font-medium border border-green-500/20">
                                     รายการเสร็จสมบูรณ์
+                                    {order.funds_release_at && (
+                                        <div className="mt-1 text-xs text-green-300/70 font-normal">
+                                            Funds release: {new Date(order.funds_release_at).toLocaleString()}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {isBuyer && !existingReview && (
@@ -242,6 +304,19 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                                         <p className="text-xs text-gray-400">{existingReview.comment_th}</p>
                                     </div>
                                 )}
+
+                                {/* Dispute Button for Post-Completion Issues */}
+                                <div className="pt-2 border-t border-white/5">
+                                    <Button variant="ghost" size="sm" className="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => handleDispute()}>
+                                        <AlertTriangle className="mr-2 h-4 w-4" /> แจ้งปัญหา/ดึงคืน (Report Issue)
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        {order.status === 'disputed' && (
+                            <div className="bg-red-500/10 text-red-400 p-4 rounded text-center text-sm font-medium border border-red-500/20">
+                                รายการนี้กำลังถูกตรวจสอบ (Disputed)
                             </div>
                         )}
 

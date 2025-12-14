@@ -172,22 +172,42 @@ export function Navbar() {
         // Realtime Subscriptions
         const channel = supabase
             .channel(`navbar-notifs-${user.id}`)
+            // 1. Notifications Table Updates
             .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
-                // Refresh notifications on any change (insert/update)
+                console.log('Navbar: Notification Update', payload)
                 fetchData()
             })
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` }, (payload) => {
-                // Play Sound
-                const audio = new Audio('/sounds/notification.mp3')
-                audio.play().catch(e => console.error('Audio play failed', e))
+            // 2. Messages INSERT (New Message)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+                const newMsg = payload.new as any
+                // For INSERT, all columns normally present
+                if (newMsg.receiver_id === user.id) {
+                    // Play Sound
+                    try {
+                        const audio = new Audio('/sounds/notification.mp3')
+                        audio.play().catch(e => console.warn('Audio play prevented:', e))
+                    } catch (err) {
+                        console.error('Audio setup failed', err)
+                    }
 
-                // Update counts
-                setUnreadChatCount(prev => prev + 1)
-
-                // Also add to toast if needed
-                toast('New Message received')
+                    // Refresh counts
+                    fetchData()
+                    toast.info('New Message')
+                }
             })
-            .subscribe()
+            // 3. Messages UPDATE (Read Status Change)
+            // Note: We listen globally because 'receiver_id' might be missing in payload if Replica Identity is default
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+                // We can't easily check receiver_id here without full replica identity.
+                // But we can just refresh the count. It's a lightweight query.
+                // We could try to OPTIMIZE by checking if we have unread messages? 
+                // Simple approach: Always fetch.
+                // console.log('Navbar: Global Message Update received, refreshing...')
+                fetchData()
+            })
+            .subscribe((status) => {
+                console.log('Navbar: Subscription Status:', status)
+            })
 
         return () => {
             supabase.removeChannel(channel)

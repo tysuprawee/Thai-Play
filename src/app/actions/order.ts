@@ -66,3 +66,99 @@ export async function createOrder(listingId: string, paymentMethod: string) {
 
     return order.id
 }
+
+// Legacy/Real Payment Confirmation (Now behaves like mock/auto-approve as per request)
+export async function confirmPayment(orderId: string) {
+    await updateOrderStatus(orderId, 'escrowed')
+}
+
+export async function updateOrderStatus(orderId: string, newStatus: string) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) throw new Error('Unauthorized')
+
+    // Simple validation (can be expanded)
+    // In real app, check state machine transitions here.
+
+    const { error } = await supabase
+        .from('orders')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', orderId)
+
+    if (error) throw new Error('Failed to update status')
+
+    revalidatePath(`/orders/${orderId}`)
+    revalidatePath('/orders')
+}
+
+// 1. Mock Payment (For Demo/PromptPay Manual Confirm)
+export async function mockPaymentSuccess(orderId: string) {
+    // Sets to 'escrowed' - meaning money is held by system (mocked)
+    await updateOrderStatus(orderId, 'escrowed')
+}
+
+// 2. Seller Delivers
+export async function confirmDelivery(orderId: string) {
+    const supabase = await createClient()
+
+    // Set auto_confirm_at to 24 hours from now
+    // In a real app, this might be configurable per category
+    const autoConfirmAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+    const { error } = await supabase
+        .from('orders')
+        .update({
+            status: 'delivered',
+            auto_confirm_at: autoConfirmAt,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', orderId)
+
+    if (error) throw new Error('Failed to update status')
+
+    revalidatePath(`/orders/${orderId}`)
+    revalidatePath('/orders')
+}
+
+// 3. Buyer Confirms Receipt (Auto-Complete)
+export async function confirmReceipt(orderId: string) {
+    const supabase = await createClient()
+
+    // Safety Hold: Funds released after 24 hours
+    const fundsReleaseAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+    const { error } = await supabase
+        .from('orders')
+        .update({
+            status: 'completed',
+            funds_release_at: fundsReleaseAt,
+            payout_status: 'pending',
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', orderId)
+
+    if (error) throw new Error('Failed to update status')
+
+    revalidatePath(`/orders/${orderId}`)
+    revalidatePath('/orders')
+}
+
+// 4. Dispute (Post-Completion)
+export async function disputeOrder(orderId: string, reason?: string) {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+        .from('orders')
+        .update({
+            status: 'disputed',
+            dispute_reason: reason,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', orderId)
+
+    if (error) throw new Error('Failed to update status')
+
+    revalidatePath(`/orders/${orderId}`)
+    revalidatePath('/orders')
+}
