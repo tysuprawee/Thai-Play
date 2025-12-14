@@ -161,45 +161,11 @@ export function ChatContent() {
         setConversations(formatted)
     }
 
-    // Fetch Messages when Conversation Selected
-    useEffect(() => {
-        if (!selectedConversationId || !user) return
-
-        const markAsRead = async () => {
-            await supabase
-                .from('messages')
-                .update({ is_read: true })
-                .eq('conversation_id', selectedConversationId)
-                .neq('sender_id', user.id)
-                .eq('is_read', false)
-        }
-
-        const loadMessages = async () => {
-            setLoadingMessages(true)
-            const { data } = await supabase
-                .from('messages')
-                .select('*')
-                .eq('conversation_id', selectedConversationId)
-                .order('created_at', { ascending: true })
-
-            if (data) {
-                setMessages(data)
-                // Mark unread messages as read
-                if (data.some(m => !m.is_read && m.sender_id !== user.id)) {
-                    markAsRead()
-                }
-            }
-            setLoadingMessages(false)
-        }
-
-        loadMessages()
-    }, [selectedConversationId, user])
-
     // Typing Status Map
     const [typingStatus, setTypingStatus] = useState<Record<string, boolean>>({})
     const typingTimeouts = useRef<Record<string, NodeJS.Timeout>>({})
 
-    // Subscribe to ALL conversations for Sidebar (Typing + Last Msg)
+    // Subscribe to ALL conversations for Sidebar (Typer + Last Msg + Unread Counts)
     const conversationIds = conversations.map(c => c.id).sort().join(',')
 
     useEffect(() => {
@@ -212,21 +178,23 @@ export function ChatContent() {
                 .channel(`chat:${convo.id}`)
                 .on('broadcast', { event: 'typing' }, (payload) => {
                     if (payload.payload.userId !== user.id) {
-                        // Set typing true for this conversation
                         setTypingStatus(prev => ({ ...prev, [convo.id]: true }))
 
-                        // Clear timeout if exists
                         if (typingTimeouts.current[convo.id]) clearTimeout(typingTimeouts.current[convo.id])
 
-                        // Set new timeout to clear
                         typingTimeouts.current[convo.id] = setTimeout(() => {
                             setTypingStatus(prev => ({ ...prev, [convo.id]: false }))
                         }, 3000)
                     }
                 })
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${convo.id}` }, (payload) => {
-                    // Update conversation list via fetch or optimistic update
-                    // We trigger fetch to ensure we get proper counts and sorting
+                    // Update conversation list via fetch to get new message snippet and ordering
+                    fetchConversations(user.id)
+                })
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${convo.id}` }, (payload) => {
+                    // Listen for read updates to clear sidebar bubbles locally if marked read elsewhere
+                    // Or just refresh to be safe
+                    console.log('ChatPage: Sidebar UPDATE received', payload)
                     fetchConversations(user.id)
                 })
                 .subscribe()
@@ -236,8 +204,6 @@ export function ChatContent() {
             console.log('ChatPage: Unsubscribing sidebar channels')
             channels.forEach(ch => supabase.removeChannel(ch))
         }
-        // Only re-subscribe if the LIST of IDs changes (new chat added/removed)
-        // Ignoring 'conversations' changes (like unread count updates) to prevent churn
     }, [conversationIds, user?.id])
 
 
@@ -245,9 +211,37 @@ export function ChatContent() {
     useEffect(() => {
         if (!selectedConversationId || !user) return
 
+        // 1. Mark as read immediately in UI (optimistic) and DB
+        const markReadAndClearSidebar = async () => {
+            // Optimistically clear sidebar count for this valid chat
+            setConversations(prev => prev.map(c => c.id === selectedConversationId ? { ...c, unread_count: 0 } : c))
+
+            await supabase
+                .from('messages')
+                .update({ is_read: true })
+                .eq('conversation_id', selectedConversationId)
+                .neq('sender_id', user.id)
+                .eq('is_read', false)
+        }
+        markReadAndClearSidebar()
+
+        const loadMessages = async () => {
+            setLoadingMessages(true)
+            const { data } = await supabase
+                .from('messages')
+                .select('*')
+                .eq('conversation_id', selectedConversationId)
+                .order('created_at', { ascending: true })
+
+            if (data) {
+                setMessages(data)
+            }
+            setLoadingMessages(false)
+        }
+        loadMessages()
+
         const channel = supabase
             .channel(`active-chat-${selectedConversationId}`)
-            // INSERT: Filter by conversation_id works (column present on insert)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversationId}` }, async (payload) => {
                 const newMsg = payload.new as Message
                 if (newMsg.sender_id !== user.id) {
@@ -256,19 +250,25 @@ export function ChatContent() {
                 }
                 if (newMsg.sender_id === user.id) return
                 setMessages(prev => [...prev, newMsg])
+
+                // Also refresh sidebar so 'last message' updates
+                fetchConversations(user.id)
             })
-            // UPDATE: Filter usually FAILS (column missing on update). Listen globally for this table and match ID.
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
-                console.log('ChatPage: UPDATE payload received:', payload)
+                console.log('ChatPage: UPDATE payload active chat:', payload)
                 const updatedMsg = payload.new as Message
-                // Functional update to access latest state without dependency loop
-                setMessages(prev => {
-                    // Only update if we have this message
-                    if (prev.some(m => m.id === updatedMsg.id)) {
-                        return prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m)
-                    }
-                    return prev
-                })
+
+                // If it's a read receipt update from the OTHER user
+                if (updatedMsg.is_read) {
+                    setMessages(prev => prev.map(m => m.id === updatedMsg.id ? { ...m, is_read: true } : m))
+                } else {
+                    setMessages(prev => {
+                        if (prev.some(m => m.id === updatedMsg.id)) {
+                            return prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m)
+                        }
+                        return prev
+                    })
+                }
             })
             .subscribe()
 
