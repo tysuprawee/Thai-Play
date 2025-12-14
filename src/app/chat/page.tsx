@@ -43,7 +43,7 @@ interface Conversation {
     unread_count: number
 }
 
-function ChatContent() {
+export function ChatContent() {
     const supabase = createClient()
     const router = useRouter()
     const searchParams = useSearchParams()
