@@ -200,8 +200,12 @@ export function ChatContent() {
     const typingTimeouts = useRef<Record<string, NodeJS.Timeout>>({})
 
     // Subscribe to ALL conversations for Sidebar (Typing + Last Msg)
+    const conversationIds = conversations.map(c => c.id).sort().join(',')
+
     useEffect(() => {
         if (!user || conversations.length === 0) return
+
+        console.log('ChatPage: Subscribing to sidebar channels', conversations.length)
 
         const channels = conversations.map(convo => {
             return supabase
@@ -221,19 +225,20 @@ export function ChatContent() {
                     }
                 })
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${convo.id}` }, (payload) => {
-                    // If this is NOT the selected conversation, update sidebar preview & unread count
-                    // (The main fetchConversations might handle this if triggered, but realtime is faster)
-                    // Triggers refresh
+                    // Update conversation list via fetch or optimistic update
+                    // We trigger fetch to ensure we get proper counts and sorting
                     fetchConversations(user.id)
                 })
                 .subscribe()
         })
 
         return () => {
+            console.log('ChatPage: Unsubscribing sidebar channels')
             channels.forEach(ch => supabase.removeChannel(ch))
-            // Do NOT clear timeouts here, or the "typing off" event will never fire if the effect re-runs (e.g. on new message)
         }
-    }, [conversations, user]) // Re-subscribes if list changes (new chat added)
+        // Only re-subscribe if the LIST of IDs changes (new chat added/removed)
+        // Ignoring 'conversations' changes (like unread count updates) to prevent churn
+    }, [conversationIds, user?.id])
 
 
     // Specific Subscription for Active Chat (Read Receipts + Messages list)
