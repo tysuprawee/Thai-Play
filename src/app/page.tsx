@@ -2,7 +2,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Search, ShieldCheck, Zap, Users } from 'lucide-react'
+import { Search, ShieldCheck, Zap, Users, Coins, Headphones } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatPrice } from '@/lib/utils'
 
@@ -56,8 +56,8 @@ export default async function Home() {
           </h1>
 
           <p className="mx-auto max-w-[700px] text-gray-300 md:text-xl mb-10 leading-relaxed font-light">
-            ซื้อ ขาย และสร้างรายได้ไปกับเรา <br />
-            ระบบคนกลางปลอดภัย • ส่งมอบทันที • ดูแลตลอด 24 ชม.
+            ค่าธรรมเนียม 0% <br />
+            ระบบคนกลางอัฉริยะ • ส่งมอบทันที • ดูแลตลอด 24 ชม.
           </p>
 
           {/* Centered Search Pill */}
@@ -152,17 +152,17 @@ export default async function Home() {
             </div>
           </div>
           <div className="flex items-center gap-4 bg-[#1e202e] p-4 rounded-2xl border border-white/5 shadow-lg max-w-xs w-full justify-center md:justify-start">
-            <div className="p-3 bg-indigo-500/10 rounded-xl text-indigo-500 ring-1 ring-indigo-500/20"><Users className="w-8 h-8" /></div>
+            <div className="p-3 bg-yellow-500/10 rounded-xl text-yellow-500 ring-1 ring-yellow-500/20"><Coins className="w-8 h-8" /></div>
             <div className="text-left">
-              <div className="text-3xl font-bold text-white">50K+</div>
-              <div className="text-sm text-gray-400">ผู้ใช้งานจริง</div>
+              <div className="text-3xl font-bold text-white">0%</div>
+              <div className="text-sm text-gray-400">ค่าธรรมเนียม</div>
             </div>
           </div>
           <div className="flex items-center gap-4 bg-[#1e202e] p-4 rounded-2xl border border-white/5 shadow-lg max-w-xs w-full justify-center md:justify-start">
-            <div className="p-3 bg-purple-500/10 rounded-xl text-purple-500 ring-1 ring-purple-500/20"><Zap className="w-8 h-8" /></div>
+            <div className="p-3 bg-purple-500/10 rounded-xl text-purple-500 ring-1 ring-purple-500/20"><Headphones className="w-8 h-8" /></div>
             <div className="text-left">
-              <div className="text-3xl font-bold text-white">5นาที</div>
-              <div className="text-sm text-gray-400">เฉลี่ยเวลาส่งมอบ</div>
+              <div className="text-3xl font-bold text-white">24/7</div>
+              <div className="text-sm text-gray-400">บริการช่วยเหลือ</div>
             </div>
           </div>
         </div>

@@ -95,20 +95,21 @@ export default function OrdersPage() {
             case 'pending_payment': return <Badge variant="outline" className="text-yellow-600 border-yellow-600">รอชำระเงิน</Badge>
             case 'escrowed': return <Badge className="bg-blue-600">เงินเข้าระบบแล้ว</Badge>
             case 'delivered': return <Badge className="bg-purple-600">รอตรวจสอบ</Badge>
+            case 'pending_release': return <Badge className="bg-orange-500 animate-pulse">ตรวจสอบความปลอดภัย</Badge>
             case 'completed': return <Badge className="bg-green-600">สำเร็จ</Badge>
             case 'cancelled': return <Badge variant="destructive">ยกเลิก</Badge>
             default: return <Badge variant="secondary">{status}</Badge>
         }
     }
 
-    if (loading) return <div className="p-8 text-center">Loading...</div>
+    if (loading) return <div className="p-8 text-center text-white">Loading...</div>
 
     return (
         <div className="container py-8 px-4 md:px-6">
-            <h1 className="text-2xl font-bold mb-6">รายการคำสั่งซื้อของฉัน</h1>
+            <h1 className="text-2xl font-bold mb-6 text-white">รายการคำสั่งซื้อของฉัน</h1>
 
             <Tabs defaultValue="buying" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 mb-8">
+                <TabsList className="grid w-full grid-cols-2 mb-8 bg-[#1e202e]">
                     <TabsTrigger value="buying">ฉันซื้อสินค้า ({buyingOrders.length})</TabsTrigger>
                     <TabsTrigger value="selling">ฉันขายสินค้า ({sellingOrders.length})</TabsTrigger>
                 </TabsList>
@@ -170,13 +171,55 @@ export default function OrdersPage() {
                 <TabsContent value="selling">
                     <div className="space-y-4">
                         {sellingOrders.length === 0 && <div className="text-center py-10 text-gray-400">ยังไม่มีรายการขาย</div>}
-                        {sellingOrders.map((order) => (
+
+                        {/* Action Needed Section */}
+                        {sellingOrders.some(o => o.status === 'escrowed') && (
+                            <div className="mb-6">
+                                <h3 className="text-sm font-semibold text-indigo-600 mb-3 flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                                    รอการจัดส่ง (ต้องดำเนินการ)
+                                </h3>
+                                <div className="space-y-3">
+                                    {sellingOrders.filter(o => o.status === 'escrowed').map(order => (
+                                        <Link key={order.id} href={`/orders/${order.id}`}>
+                                            <Card className="hover:bg-slate-50 transition-colors border-l-4 border-l-indigo-500 shadow-md">
+                                                <CardContent className="p-4 flex items-center justify-between">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="p-3 bg-indigo-100 rounded-full">
+                                                            <Package className="h-6 w-6 text-indigo-600" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-bold flex items-center gap-2">
+                                                                {order.listings?.title_th}
+                                                                <Badge variant="secondary" className="text-xs bg-indigo-100 text-indigo-700">รอส่งของ</Badge>
+                                                            </div>
+                                                            <div className="text-sm text-gray-600 flex items-center gap-2 mt-1">
+                                                                <span>ผู้ซื้อ: {order.profiles?.display_name}</span>
+                                                                <span className="text-xs px-2 py-0.5 bg-gray-100 rounded-full border">แชทเลย</span>
+                                                            </div>
+                                                            <div className="text-xs text-gray-400 mt-1">Order ID: {order.id.slice(0, 8)}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="font-bold text-green-600 text-lg">+{formatPrice(order.net_amount)}</div>
+                                                        <Button size="sm" className="mt-2 bg-indigo-600 hover:bg-indigo-700">จัดการออเดอร์</Button>
+                                                    </div>
+                                                </CardContent>
+                                            </Card>
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <h3 className="text-sm font-medium text-gray-500 mb-3">ประวัติการขายทั้งหมด</h3>
+                        {sellingOrders.filter(o => o.status !== 'escrowed').map((order) => (
                             <Link key={order.id} href={`/orders/${order.id}`}>
                                 <Card className="hover:bg-slate-50 transition-colors">
                                     <CardContent className="p-4 flex items-center justify-between">
                                         <div className="flex items-center gap-4">
-                                            <div className="p-3 bg-green-100 rounded-full">
-                                                <Package className="h-6 w-6 text-green-600" />
+                                            <div className="p-3 bg-gray-100 rounded-full">
+                                                <Package className="h-6 w-6 text-gray-500" />
                                             </div>
                                             <div>
                                                 <div className="font-bold">{order.listings?.title_th}</div>
@@ -186,7 +229,7 @@ export default function OrdersPage() {
                                         </div>
                                         <div className="text-right">
                                             <div className="mb-1">{getStatusBadge(order.status)}</div>
-                                            <div className="font-bold text-green-600">+{formatPrice(order.net_amount)}</div>
+                                            <div className="font-bold text-gray-700">+{formatPrice(order.net_amount)}</div>
                                         </div>
                                     </CardContent>
                                 </Card>

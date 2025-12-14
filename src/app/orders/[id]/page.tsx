@@ -139,7 +139,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                     <CardContent className="space-y-4">
                         <div className="flex justify-between items-center">
                             <span className="text-sm font-medium text-gray-400">Status</span>
-                            <Badge className="text-base bg-indigo-500/10 text-indigo-400 border-indigo-500/20 hover:bg-indigo-500/20">{order.status}</Badge>
+                            {getStatusBadge(order.status)}
                         </div>
                         <Separator className="bg-white/5" />
 
@@ -155,9 +155,26 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                             </Button>
                         )}
                         {order.status === 'delivered' && isBuyer && (
-                            <Button className="w-full bg-green-600 hover:bg-green-700" onClick={() => updateStatus('completed')}>
-                                <CheckCircle className="mr-2 h-4 w-4" /> ยืนยันรับของ (ปิดงาน)
+                            <Button className="w-full bg-orange-500 hover:bg-orange-600" onClick={() => updateStatus('pending_release')}>
+                                <ShieldCheck className="mr-2 h-4 w-4" /> ยืนยันรับของ (เริ่มตรวจสอบความปลอดภัย)
                             </Button>
+                        )}
+                        {order.status === 'pending_release' && (
+                            <div className="space-y-3">
+                                <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded-lg text-sm text-orange-200">
+                                    <div className="font-bold flex items-center gap-2 mb-1">
+                                        <Clock className="w-4 h-4" />
+                                        อยู่ระหว่างตรวจสอบ (24-72 ชม.)
+                                    </div>
+                                    <p className="text-xs opacity-80">
+                                        ระบบกำลังตรวจสอบความปลอดภัยเพื่อป้องกันการฉ้อโกง เงินจะถูกโอนให้ผู้ขายอัตโนมัติเมื่อผ่านการตรวจสอบ
+                                    </p>
+                                </div>
+                                {/* Admin Override / Mock System Release */}
+                                <Button variant="outline" className="w-full border-green-500/30 text-green-400 hover:bg-green-500/10" onClick={() => updateStatus('completed')}>
+                                    <CheckCircle className="mr-2 h-4 w-4" /> [Admin] อนุมัติการโอนเงิน
+                                </Button>
+                            </div>
                         )}
                         {order.status === 'completed' && (
                             <div className="space-y-4">

@@ -166,14 +166,14 @@ export function Navbar() {
                             activeMenu={activeMenu}
                             onHover={setActiveMenu}
                         />
-                        <NavItem
+                        {/* <NavItem
                             id="topup"
                             href="/browse?type=topup"
                             icon={<CreditCard className="w-4 h-4" />}
                             label="เติมเกม"
                             activeMenu={activeMenu}
                             onHover={setActiveMenu}
-                        />
+                        /> */}
                     </nav>
                 </div>
 
