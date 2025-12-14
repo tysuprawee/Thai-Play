@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Send, CheckCircle, AlertTriangle, ShieldCheck, Star, Package, Clock, MessageSquare } from 'lucide-react'
 import { formatPrice } from '@/lib/utils'
+import { PromptPayQR } from '@/components/payment/PromptPayQR'
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params)
@@ -111,8 +112,13 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
             comment_th: reviewComment
         })
 
-        if (error) alert(error.message)
-        else window.location.reload()
+        if (error) {
+            alert(error.message)
+        } else {
+            // toast.success('ขอบคุณสำหรับรีวิว!') // Using alert for now if toast not imported, or assumes I'll add toast
+            alert('ขอบคุณสำหรับรีวิว! ระบบจะพาคุณกลับหน้าหลัก')
+            router.push('/')
+        }
     }
 
     const updateStatus = async (status: string) => {
@@ -157,16 +163,25 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
 
                         {/* Action Buttons based on Status */}
                         {order.status === 'pending_payment' && isBuyer && (
-                            <Button className="w-full bg-green-600 hover:bg-green-700" onClick={() => updateStatus('escrowed')}>
-                                <ShieldCheck className="mr-2 h-4 w-4" /> ชำระเงิน (Mock)
-                            </Button>
+                            <div className="space-y-4">
+                                <div className="bg-[#13151f] p-6 rounded-xl border border-white/10 flex flex-col items-center">
+                                    <PromptPayQR amount={order.net_amount} />
+                                    <p className="text-gray-400 text-sm mt-4 text-center max-w-xs">
+                                        กรุณาสแกน QR Code ผ่านแอปธนาคารของท่าน<br />
+                                        ยอดโอน: <span className="text-indigo-400 font-bold">{formatPrice(order.net_amount)}</span>
+                                    </p>
+                                </div>
+                                <Button className="w-full bg-green-600 hover:bg-green-700 h-12 text-lg" onClick={() => updateStatus('escrowed')}>
+                                    <ShieldCheck className="mr-2 h-5 w-5" /> แจ้งชำระเงิน (แนบสลิป)
+                                </Button>
+                            </div>
                         )}
                         {order.status === 'escrowed' && isSeller && (
                             <Button className="w-full bg-indigo-600 hover:bg-indigo-500" onClick={() => updateStatus('delivered')}>
                                 <Package className="mr-2 h-4 w-4" /> แจ้งส่งมอบงาน/ของ
                             </Button>
                         )}
-                        {order.status === 'delivered' && isBuyer && (
+                        {(order.status === 'delivered' || order.status === 'escrowed') && isBuyer && (
                             <Button className="w-full bg-orange-500 hover:bg-orange-600" onClick={() => updateStatus('pending_release')}>
                                 <ShieldCheck className="mr-2 h-4 w-4" /> ยืนยันรับของ (เริ่มตรวจสอบความปลอดภัย)
                             </Button>

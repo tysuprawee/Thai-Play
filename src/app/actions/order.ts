@@ -37,7 +37,7 @@ export async function createOrder(listingId: string, paymentMethod: string) {
             listing_id: listing.id,
             amount: listing.price_min,
             net_amount: listing.price_min, // Fee logic to be added later
-            status: 'escrowed', // Mapped 'paid' -> 'escrowed'
+            status: 'pending_payment', // Start as pending payment
             // payment_method: paymentMethod // Column missing in schema, ignoring for now
         })
         .select()

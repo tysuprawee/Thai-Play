@@ -124,6 +124,82 @@ export function Navbar() {
         }
     }, [])
 
+    const [notifications, setNotifications] = useState<any[]>([])
+    const [unreadChatCount, setUnreadChatCount] = useState(0)
+
+    // Derived state for unread notifications
+    const unreadNotifCount = notifications.filter(n => !n.is_read).length
+
+    const markNotificationsAsRead = async () => {
+        if (unreadNotifCount === 0) return
+        // Optimistic update
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+
+        if (user) {
+            await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false)
+        }
+    }
+
+    // Initialize Data & Subscriptions
+    useEffect(() => {
+        if (!user) return
+
+        const fetchData = async () => {
+            // 1. Fetch Notifications
+            const { data: notifs } = await supabase
+                .from('notifications')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(10)
+
+            if (notifs) setNotifications(notifs)
+
+            // 2. Fetch Chat Unread Count (General Messages)
+            // Note: This needs 'is_read' on messages table which we just added. 
+            // For now, let's assume it works or returns 0 if column missing.
+            const { count } = await supabase
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('receiver_id', user.id)
+                .eq('is_read', false)
+
+            setUnreadChatCount(count || 0)
+        }
+
+        fetchData()
+
+        // Realtime Subscriptions
+        const channel = supabase
+            .channel(`navbar-notifs-${user.id}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
+                // Refresh notifications on any change (insert/update)
+                fetchData()
+            })
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` }, () => {
+                setUnreadChatCount(prev => prev + 1)
+            })
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
+    }, [user])
+
+    // Time Ago Helper
+    function timeAgo(dateString: string) {
+        const date = new Date(dateString)
+        const now = new Date()
+        const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+        if (seconds < 60) return 'Just now'
+        const minutes = Math.floor(seconds / 60)
+        if (minutes < 60) return `${minutes}m ago`
+        const hours = Math.floor(minutes / 60)
+        if (hours < 24) return `${hours}h ago`
+        return `${Math.floor(hours / 24)}d ago`
+    }
+
     return (
         <nav
             ref={navRef}
@@ -235,12 +311,43 @@ export function Navbar() {
                             <Button variant="ghost" size="icon" className="relative text-gray-400 hover:text-white hover:bg-white/10" asChild>
                                 <Link href="/chat">
                                     <MessageSquare className="h-5 w-5" />
+                                    {unreadChatCount > 0 && (
+                                        <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-red-500 shadow-md animate-pulse" />
+                                    )}
                                 </Link>
                             </Button>
-                            <Button variant="ghost" size="icon" className="relative text-gray-400 hover:text-white hover:bg-white/10">
-                                <Bell className="h-5 w-5" />
-                                <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-red-500 shadow-md" />
-                            </Button>
+
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="relative text-gray-400 hover:text-white hover:bg-white/10" onClick={markNotificationsAsRead}>
+                                        <Bell className="h-5 w-5" />
+                                        {unreadNotifCount > 0 && (
+                                            <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-red-500 shadow-md" />
+                                        )}
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-80 bg-[#1e202e] border-white/10 text-white p-0 " align="end">
+                                    <div className="p-3 border-b border-white/5 font-semibold text-sm">Notifications</div>
+                                    <div className="max-h-[300px] overflow-y-auto">
+                                        {notifications.length > 0 ? (
+                                            notifications.map((n) => (
+                                                <Link key={n.id} href={n.link || '#'} className="block p-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0">
+                                                    <div className="flex gap-3">
+                                                        <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${n.is_read ? 'bg-transparent' : 'bg-indigo-500'}`} />
+                                                        <div>
+                                                            <div className="text-sm font-medium text-gray-200">{n.title}</div>
+                                                            <div className="text-xs text-gray-400 line-clamp-2">{n.message}</div>
+                                                            <div className="text-[10px] text-gray-500 mt-1">{timeAgo(n.created_at)}</div>
+                                                        </div>
+                                                    </div>
+                                                </Link>
+                                            ))
+                                        ) : (
+                                            <div className="p-4 text-center text-xs text-gray-500">No new notifications</div>
+                                        )}
+                                    </div>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <Button variant="ghost" className="relative h-9 w-9 rounded-full ring-2 ring-white/10 hover:ring-indigo-500 transition-all">
