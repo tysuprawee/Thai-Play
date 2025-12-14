@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Send, CheckCircle, AlertTriangle, ShieldCheck, Star, Package, Clock, MessageSquare } from 'lucide-react'import { formatPrice } from '@/lib/utils'
+import { Send, CheckCircle, AlertTriangle, ShieldCheck, Star, Package, Clock, MessageSquare } from 'lucide-react'
+import { formatPrice } from '@/lib/utils'
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params)
