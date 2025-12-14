@@ -176,8 +176,16 @@ export function Navbar() {
                 // Refresh notifications on any change (insert/update)
                 fetchData()
             })
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` }, () => {
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` }, (payload) => {
+                // Play Sound
+                const audio = new Audio('/sounds/notification.mp3')
+                audio.play().catch(e => console.error('Audio play failed', e))
+
+                // Update counts
                 setUnreadChatCount(prev => prev + 1)
+
+                // Also add to toast if needed
+                toast('New Message received')
             })
             .subscribe()
 

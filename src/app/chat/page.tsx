@@ -195,80 +195,70 @@ export function ChatContent() {
         loadMessages()
     }, [selectedConversationId, user])
 
-    // Realtime Subscription for Active Chat
+    // Typing Status Map
+    const [typingStatus, setTypingStatus] = useState<Record<string, boolean>>({})
+    const typingTimeouts = useRef<Record<string, NodeJS.Timeout>>({})
+
+    // Subscribe to ALL conversations for Sidebar (Typing + Last Msg)
+    useEffect(() => {
+        if (!user || conversations.length === 0) return
+
+        const channels = conversations.map(convo => {
+            return supabase
+                .channel(`chat:${convo.id}`)
+                .on('broadcast', { event: 'typing' }, (payload) => {
+                    if (payload.payload.userId !== user.id) {
+                        // Set typing true for this conversation
+                        setTypingStatus(prev => ({ ...prev, [convo.id]: true }))
+
+                        // Clear timeout if exists
+                        if (typingTimeouts.current[convo.id]) clearTimeout(typingTimeouts.current[convo.id])
+
+                        // Set new timeout to clear
+                        typingTimeouts.current[convo.id] = setTimeout(() => {
+                            setTypingStatus(prev => ({ ...prev, [convo.id]: false }))
+                        }, 3000)
+                    }
+                })
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${convo.id}` }, (payload) => {
+                    // If this is NOT the selected conversation, update sidebar preview & unread count
+                    // (The main fetchConversations might handle this if triggered, but realtime is faster)
+                    // Triggers refresh
+                    fetchConversations(user.id)
+                })
+                .subscribe()
+        })
+
+        return () => {
+            channels.forEach(ch => supabase.removeChannel(ch))
+            // Clear all timeouts
+            Object.values(typingTimeouts.current).forEach(t => clearTimeout(t))
+        }
+    }, [conversations, user]) // Re-subscribes if list changes (new chat added)
+
+    // Specific Subscription for Active Chat (Read Receipts + Messages list)
     useEffect(() => {
         if (!selectedConversationId || !user) return
 
         const channel = supabase
-            .channel(`chat:${selectedConversationId}`)
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'messages',
-                filter: `conversation_id=eq.${selectedConversationId}`
-            }, async (payload) => {
+            .channel(`active-chat:${selectedConversationId}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversationId}` }, async (payload) => {
                 const newMsg = payload.new as Message
-
-                // If I sent it, just add it (optimistic handling might duplicate if not careful, but we have checks)
-                // If partner sent it, add it AND mark as read since we are viewing
                 if (newMsg.sender_id !== user.id) {
-                    // Play Sound
-                    new Audio('/sounds/notification.mp3').play().catch((e) => console.log('Audio play failed', e))
-
-                    // Mark as read immediately
+                    // Mark read immediately if window focused (implied)
                     await supabase.from('messages').update({ is_read: true }).eq('id', newMsg.id)
                     newMsg.is_read = true
                 }
-
-                if (newMsg.sender_id === user.id) return // Optimistic skip
-
+                if (newMsg.sender_id === user.id) return
                 setMessages(prev => [...prev, newMsg])
-                fetchConversations(user.id) // Refresh sidebar
             })
-            .on('postgres_changes', {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'messages',
-                filter: `conversation_id=eq.${selectedConversationId}`
-            }, (payload) => {
-                // Handle Read Receipts updates
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversationId}` }, (payload) => {
                 const updatedMsg = payload.new as Message
-                console.log('Received Message Update:', updatedMsg) // Debug
                 setMessages(prev => prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m))
-            })
-            .on('broadcast', { event: 'typing' }, (payload) => {
-                if (payload.payload.userId !== user.id) {
-                    setIsPartnerTyping(true)
-                    // Auto-hide after 3 seconds
-                    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
-                    typingTimeoutRef.current = setTimeout(() => setIsPartnerTyping(false), 3000)
-                }
-            })
-            // Listen for profile updates (Online Status)
-            .on('postgres_changes', {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'profiles'
-            }, (payload) => {
-                const updatedProfile = payload.new as Profile
-
-                // Update in conversations list
-                setConversations(prev => prev.map(c => {
-                    if (c.partner.id === updatedProfile.id) {
-                        return { ...c, partner: { ...c.partner, ...updatedProfile } }
-                    }
-                    return c
-                }))
-
-                // Update in single conversation view
-                if (singleConversation && singleConversation.partner.id === updatedProfile.id) {
-                    setSingleConversation(prev => prev ? { ...prev, partner: { ...prev.partner, ...updatedProfile } } : null)
-                }
             })
             .subscribe()
 
         return () => {
-            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
             supabase.removeChannel(channel)
         }
     }, [selectedConversationId, user])
@@ -482,8 +472,8 @@ export function ChatContent() {
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-center">
-                                        <span className={`text-sm truncate w-32 ${convo.unread_count > 0 ? 'text-white font-semibold' : 'text-gray-400'}`}>
-                                            {convo.last_message_preview}
+                                        <span className={`text-sm truncate w-32 ${convo.unread_count > 0 ? 'text-white font-semibold' : 'text-gray-400'} ${typingStatus[convo.id] ? 'text-green-400 font-medium italic animate-pulse' : ''}`}>
+                                            {typingStatus[convo.id] ? 'กำลังพิมพ์...' : convo.last_message_preview}
                                         </span>
                                         {convo.unread_count > 0 && (
                                             <span className="flex items-center justify-center w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full">
@@ -582,7 +572,7 @@ export function ChatContent() {
                                         </div>
                                     )
                                 })}
-                                {isPartnerTyping && (
+                                {typingStatus[selectedConversationId] && (
                                     <div className="flex justify-start animate-fade-in">
                                         <div className="bg-[#2a2d3e] p-3 rounded-2xl rounded-bl-none flex items-center gap-1">
                                             <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
