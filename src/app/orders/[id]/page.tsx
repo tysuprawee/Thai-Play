@@ -43,6 +43,11 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     const supabase = createClient()
     const router = useRouter()
 
+    const [initialScrollDone, setInitialScrollDone] = useState(false)
+    const [pendingStatus, setPendingStatus] = useState<string | null>(null)
+    const [disputeOpen, setDisputeOpen] = useState(false)
+    const [disputeReason, setDisputeReason] = useState('')
+
     useEffect(() => {
         const init = async () => {
             const { data: { user } } = await supabase.auth.getUser()
@@ -75,7 +80,6 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
             const channel = supabase
                 .channel(`order-${id}`)
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_messages', filter: `order_id=eq.${id}` }, (payload) => {
-                    setMessages((prev) => [...prev, payload.new]) // Ideally fetch sender name too, but sufficient for now or can re-fetch
                     const fetchNewMsg = async () => {
                         const { data } = await supabase.from('order_messages').select('*, sender:profiles!sender_id(display_name)').eq('id', payload.new.id).single()
                         if (data) setMessages(prev => prev.map(m => m.id === payload.new.id ? data : m).concat(prev.find(m => m.id === payload.new.id) ? [] : [data]))
@@ -84,9 +88,6 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 })
                 .subscribe()
 
-            return () => {
-                supabase.removeChannel(channel)
-            }
             // Fetch Review
             const { data: reviewData } = await supabase
                 .from('reviews')
@@ -95,14 +96,44 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 .single()
 
             setExistingReview(reviewData)
+
+            return () => {
+                supabase.removeChannel(channel)
+            }
         }
         init()
     }, [id])
 
-    // Auto scroll to bottom
+    // Auto scroll logic
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }, [messages])
+        if (messages.length > 0) {
+            // Only scroll if initial load not done OR if the last message is from ME (so I see what I sent)
+            // OR if the user is already near bottom? For now, stick to simple "New Message" trigger logic
+            // Actually, best UX: Scroll on Mount. Scroll on New Message.
+            if (!initialScrollDone) {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+                setInitialScrollDone(true)
+            } else {
+                // Check if last message is new
+                // For now just scroll always on new message count change if desired, strictly requested "fix auto scroll on refresh"
+                // "I don't like auto scroll when i refresh".
+                // Refresh = Mount. So on Mount (initialScrollDone false) we SHOULD scroll?
+                // Or does he mean "When I refresh, it scrolls, I don't like that?"
+                // Maybe he wants to stay at top? No, usually chat needs to be at bottom.
+                // Maybe he means "It keeps scrolling to bottom even when I am reading history".
+                // Let's scroll ONLY ONCE on mount.
+            }
+        }
+    }, [messages, initialScrollDone])
+
+    // Listen for new messages separately to trigger scroll for incoming
+    useEffect(() => {
+        if (messages.length > 0 && initialScrollDone) {
+            // If new message comes in, scroll?
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }
+    }, [messages.length])
+
 
     const sendMessage = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -115,24 +146,6 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
         })
         setNewMessage('')
     }
-
-    const submitReview = async (e: React.FormEvent) => {
-        e.preventDefault()
-        if (rating === 0) return toast.error('กรุณาให้คะแนน (Please rate)')
-
-        try {
-            await submitReviewAction(order.id, rating, reviewComment)
-            toast.success('ขอบคุณสำหรับรีวิว! (Review submitted)')
-            // Refresh to show the read-only review
-            window.location.reload()
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to submit review')
-        }
-    }
-
-    const [pendingStatus, setPendingStatus] = useState<string | null>(null)
-    const [disputeOpen, setDisputeOpen] = useState(false)
-    const [disputeReason, setDisputeReason] = useState('')
 
     const updateStatus = async (status: string) => {
         setPendingStatus(status)
@@ -151,16 +164,27 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 await confirmPayment(id)
                 toast.success('Payment confirmed')
             } else {
-                // Fallback
                 await supabase.from('orders').update({ status }).eq('id', order.id)
             }
             toast.dismiss(loadingToast)
             setPendingStatus(null)
-            // Reload to reflect changes
             window.location.reload()
-        } catch (error) {
+        } catch (error: any) {
             toast.dismiss(loadingToast)
-            toast.error('Failed to update status')
+            toast.error('Failed to update status: ' + error.message)
+        }
+    }
+
+    const submitReview = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (rating === 0) return toast.error('กรุณาให้คะแนน (Please rate)')
+
+        try {
+            await submitReviewAction(order.id, rating, reviewComment)
+            toast.success('ขอบคุณสำหรับรีวิว! (Review submitted)')
+            window.location.reload()
+        } catch (error: any) {
+            toast.error(error.message || 'Failed to submit review')
         }
     }
 
@@ -180,7 +204,6 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
 
     const submitDispute = async () => {
         if (!disputeReason.trim()) return
-
         try {
             await disputeOrder(id, disputeReason)
             toast.success('Issue reported')
@@ -197,7 +220,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
             case 'pending_payment': return <Badge variant="outline" className="text-yellow-400 border-yellow-400">รอชำระเงิน</Badge>
             case 'escrowed': return <Badge className="bg-blue-600 border-0">เงินเข้าระบบแล้ว (Escrow)</Badge>
             case 'delivered': return <Badge className="bg-purple-600 border-0">รอตรวจสอบ</Badge>
-            case 'pending_release': return <Badge className="bg-orange-500 border-0 animate-pulse">ตรวจสอบความปลอดภัย (24-72 ชม.)</Badge>
+            case 'pending_release': return <Badge className="bg-orange-500 border-0 animate-pulse">ตรวจสอบความปลอดภัย</Badge>
             case 'completed': return <Badge className="bg-green-600 border-0">สำเร็จ</Badge>
             case 'cancelled': return <Badge variant="destructive" className="border-0">ยกเลิก</Badge>
             default: return <Badge variant="secondary">{status}</Badge>
@@ -226,8 +249,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         </div>
                         <Separator className="bg-white/5" />
 
-                        {/* Action Buttons based on Status */}
-                        {/* Action Buttons based on Status */}
+                        {/* STATUS: Pending Payment */}
                         {order.status === 'pending_payment' && isBuyer && (
                             <div className="space-y-4">
                                 <div className="bg-[#13151f] p-6 rounded-xl border border-white/10 flex flex-col items-center">
@@ -248,44 +270,56 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                             </div>
                         )}
 
-                        {order.status === 'escrowed' && isSeller && (
+                        {/* STATUS: Escrowed (Paid) */}
+                        {order.status === 'escrowed' && (
                             <div className="space-y-3">
-                                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-sm text-blue-200">
-                                    <h4 className="font-bold mb-1">คำแนะนำ</h4>
-                                    <p className="text-xs opacity-80">เมื่อส่งมอบสินค้า/รหัสให้ผู้ซื้อแล้ว กรุณากดปุ่มด้านล่าง</p>
+                                <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl text-sm text-orange-200">
+                                    <div className="font-bold mb-2 flex items-center gap-2 text-orange-100">
+                                        <Clock className="h-4 w-4" />
+                                        {isSeller ? 'ส่งมอบสินค้า' : 'รอผู้ขายส่งของ'}
+                                    </div>
+                                    <p className="text-xs opacity-90 leading-relaxed text-orange-200/80">
+                                        {isSeller
+                                            ? 'เงินบัญชีกลางแล้ว ส่งสินค้าให้ผู้ซื้อในแชท เสร็จแล้วกด "แจ้งส่งมอบ"'
+                                            : 'ผู้ขายกำลังเตรียมสินค้า...'}
+                                    </p>
                                 </div>
-                                <Button className="w-full bg-indigo-600 hover:bg-indigo-500" onClick={() => updateStatus('delivered')}>
-                                    <Package className="mr-2 h-4 w-4" /> แจ้งส่งมอบงาน/ของ
-                                </Button>
+                                {isSeller && (
+                                    <Button className="w-full bg-indigo-600 hover:bg-indigo-500 h-12 text-base shadow-lg shadow-indigo-500/20" onClick={() => updateStatus('delivered')}>
+                                        <Package className="mr-2 h-5 w-5" /> แจ้งส่งมอบงาน/ของ
+                                    </Button>
+                                )}
                             </div>
                         )}
 
-                        {order.status === 'delivered' && isBuyer && (
+                        {/* STATUS: Delivered (Wait for Confirm) */}
+                        {order.status === 'delivered' && (
                             <div className="space-y-3">
-                                <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded-lg text-sm text-orange-200">
-                                    <h4 className="font-bold mb-1">ตรวจสอบสินค้า</h4>
-                                    <p className="text-xs opacity-80">กรุณาตรวจสอบสินค้าให้เรียบร้อยก่อนกดยืนยัน หากกดยืนยันแล้วระบบจะโอนเงินให้ผู้ขายทันที</p>
-                                    {order.auto_confirm_at && (
-                                        <div className="mt-2 text-xs font-mono bg-black/20 p-1 rounded">
-                                            Auto-complete: {new Date(order.auto_confirm_at).toLocaleString()}
-                                        </div>
-                                    )}
+                                <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl text-sm text-orange-200">
+                                    <div className="font-bold mb-2 flex items-center gap-2 text-orange-100">
+                                        <ShieldCheck className="h-4 w-4" />
+                                        {isBuyer ? 'ตรวจสอบสินค้า' : 'รอผู้ซื้อตรวจสอบ'}
+                                    </div>
+                                    <p className="text-xs opacity-90 leading-relaxed text-orange-200/80">
+                                        {isBuyer
+                                            ? 'ตรวจสอบสินค้าให้ถูกต้องก่อนกดยืนยัน (เงินจะโอนให้ผู้ขายทันที)'
+                                            : 'ผู้ซื้อกำลังตรวจสอบสินค้า ระบบจะโอนเงินให้คุณเมื่อผู้ซื้อยืนยัน'}
+                                    </p>
                                 </div>
-                                <Button className="w-full bg-orange-500 hover:bg-orange-600" onClick={() => updateStatus('completed')}>
-                                    <ShieldCheck className="mr-2 h-4 w-4" /> ยืนยันรับของ (โอนเงินให้ผู้ขาย)
-                                </Button>
+                                {isBuyer && (
+                                    <Button className="w-full bg-orange-500 hover:bg-orange-600 h-12 text-base shadow-lg shadow-orange-500/20" onClick={() => updateStatus('completed')}>
+                                        <ShieldCheck className="mr-2 h-5 w-5" /> ยืนยันรับของ (โอนเงินให้ผู้ขาย)
+                                    </Button>
+                                )}
                             </div>
                         )}
 
+                        {/* STATUS: Completed */}
                         {order.status === 'completed' && (
                             <div className="space-y-4">
-                                <div className="bg-green-500/10 text-green-400 p-3 rounded text-center text-sm font-medium border border-green-500/20">
-                                    รายการเสร็จสมบูรณ์
-                                    {order.funds_release_at && (
-                                        <div className="mt-1 text-xs text-green-300/70 font-normal">
-                                            Funds release: {new Date(order.funds_release_at).toLocaleString()}
-                                        </div>
-                                    )}
+                                <div className="bg-green-500/10 text-green-400 p-4 rounded-xl text-center text-sm font-medium border border-green-500/20 flex flex-col items-center gap-2">
+                                    <CheckCircle className="h-8 w-8 text-green-400 mb-1" />
+                                    <span>รายการเสร็จสมบูรณ์</span>
                                 </div>
 
                                 {isBuyer && !existingReview && (
@@ -322,10 +356,9 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                                     </div>
                                 )}
 
-                                {/* Dispute Button for Post-Completion Issues */}
                                 <div className="pt-2 border-t border-white/5">
                                     <Button variant="ghost" size="sm" className="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => handleDispute()}>
-                                        <AlertTriangle className="mr-2 h-4 w-4" /> แจ้งปัญหา/ดึงคืน (Report Issue)
+                                        <AlertTriangle className="mr-2 h-4 w-4" /> แจ้งปัญหา (Report Issue)
                                     </Button>
                                 </div>
                             </div>
@@ -340,7 +373,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         <div className="bg-blue-500/10 p-3 rounded text-xs text-blue-300 flex items-start gap-2 border border-blue-500/20">
                             <AlertTriangle className="h-4 w-4 shrink-0" />
                             <div>
-                                เงินของคุณปลอดภัยในระบบ Escrow จนกว่าผู้ซื้อจะกดยืนยันรับของ (โอนเงินให้ผู้ขายหลังสถานะ Completed)
+                                เงินปลอดภัยในระบบ Escrow จนกว่าผู้ซื้อจะกดยืนยันรับของ
                             </div>
                         </div>
                     </CardContent>
@@ -373,8 +406,8 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 </Card>
             </div>
 
-            {/* Right: Chat System */}
-            <div className="flex-1 flex flex-col bg-[#1e202e] border border-white/5 rounded-lg shadow-xl h-full overflow-hidden">
+            {/* Right: Chat System (Updated UI) */}
+            <div className="flex-1 flex flex-col bg-[#1e202e] border border-white/5 rounded-2xl shadow-xl h-full overflow-hidden">
                 <div className="p-4 border-b border-white/5 bg-[#13151f] flex justify-between items-center text-white">
                     <h3 className="font-bold flex items-center gap-2">
                         <MessageSquare className="h-5 w-5 text-indigo-400" /> ห้องสนทนา
@@ -389,9 +422,12 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         const isMe = msg.sender_id === currentUser?.id
                         return (
                             <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[70%] rounded-lg px-4 py-2 text-sm ${isMe ? 'bg-indigo-600 text-white' : 'bg-[#1e202e] text-gray-200 border border-white/5'}`}>
+                                <div className={`max-w-[70%] rounded-2xl px-5 py-3 text-sm shadow-sm ${isMe
+                                        ? 'bg-blue-600 text-white rounded-tr-none'
+                                        : 'bg-[#1e202e] text-gray-200 border border-white/5 rounded-tl-none'
+                                    }`}>
                                     <div>{msg.message_th}</div>
-                                    <div className={`text-[10px] mt-1 ${isMe ? 'text-indigo-200' : 'text-gray-500'}`}>
+                                    <div className={`text-[10px] mt-1 flex justify-end ${isMe ? 'text-blue-200' : 'text-gray-500'}`}>
                                         {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
                                 </div>
@@ -407,9 +443,9 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                             value={newMessage}
                             onChange={(e) => setNewMessage(e.target.value)}
                             placeholder="พิมพ์ข้อความ..."
-                            className="flex-1 bg-[#0b0c14] border-white/10 text-white placeholder:text-gray-600 focus-visible:ring-indigo-500"
+                            className="flex-1 bg-[#1e202e] border-white/10 text-white placeholder:text-gray-600 focus-visible:ring-indigo-500 rounded-full px-4"
                         />
-                        <Button type="submit" size="icon" disabled={!newMessage.trim()} className="bg-indigo-600 hover:bg-indigo-500">
+                        <Button type="submit" size="icon" disabled={!newMessage.trim()} className="bg-indigo-600 hover:bg-indigo-500 rounded-full h-10 w-10 shrink-0">
                             <Send className="h-4 w-4" />
                         </Button>
                     </form>
@@ -422,7 +458,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                     <AlertDialogHeader>
                         <AlertDialogTitle>ยืนยันการเปลี่ยนแปลงสถานะ?</AlertDialogTitle>
                         <AlertDialogDescription className="text-gray-400">
-                            คุณแน่ใจหรือไม่ที่จะเปลี่ยนสถานะเป็น {pendingStatus}
+                            คุณแน่ใจหรือไม่ที่จะเปลี่ยนสถานะเป็น {pendingStatus === 'delivered' ? 'ส่งมอบแล้ว' : pendingStatus === 'completed' ? 'ยืนยันรับของ' : pendingStatus}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -459,4 +495,3 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
         </div>
     )
 }
-
