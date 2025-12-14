@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,6 +12,7 @@ import { Send, CheckCircle, AlertTriangle, ShieldCheck, Star } from 'lucide-reac
 import { formatPrice } from '@/lib/utils'
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = use(params)
     const [order, setOrder] = useState<any>(null)
     const [loading, setLoading] = useState(true)
     const [messages, setMessages] = useState<any[]>([])
@@ -27,7 +28,6 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
 
     useEffect(() => {
         const init = async () => {
-            const { id } = await params
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) {
                 router.push('/login')
@@ -80,7 +80,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
             setExistingReview(reviewData)
         }
         init()
-    }, [])
+    }, [id])
 
     // Auto scroll to bottom
     useEffect(() => {
@@ -121,27 +121,27 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
         window.location.reload() // Simple reload to refresh state
     }
 
-    if (loading) return <div className="p-10 text-center">Loading...</div>
-    if (!order) return <div className="p-10 text-center">Order not found</div>
+    if (loading) return <div className="p-10 text-center text-white">Loading...</div>
+    if (!order) return <div className="p-10 text-center text-white">Order not found</div>
 
     const isBuyer = currentUser?.id === order.buyer_id
     const isSeller = currentUser?.id === order.seller_id
 
     return (
-        <div className="container py-6 px-4 md:px-6 h-[calc(100vh-4rem)] flex flex-col md:flex-row gap-6">
+        <div className="container mx-auto py-6 px-4 md:px-6 h-[calc(100vh-4rem)] flex flex-col md:flex-row gap-6">
 
             {/* Left: Order Details & Status Actions */}
-            <div className="w-full md:w-1/3 bg-slate-50 p-4 rounded-lg flex flex-col gap-4 overflow-y-auto">
-                <Card>
+            <div className="w-full md:w-1/3 flex flex-col gap-4 overflow-y-auto">
+                <Card className="bg-[#1e202e] border-white/5 text-white">
                     <CardHeader>
                         <CardTitle className="text-lg">สถานะคำสั่งซื้อ</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium">Status</span>
-                            <Badge className="text-base">{order.status}</Badge>
+                            <span className="text-sm font-medium text-gray-400">Status</span>
+                            <Badge className="text-base bg-indigo-500/10 text-indigo-400 border-indigo-500/20 hover:bg-indigo-500/20">{order.status}</Badge>
                         </div>
-                        <Separator />
+                        <Separator className="bg-white/5" />
 
                         {/* Action Buttons based on Status */}
                         {order.status === 'pending_payment' && isBuyer && (
@@ -150,7 +150,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                             </Button>
                         )}
                         {order.status === 'escrowed' && isSeller && (
-                            <Button className="w-full" onClick={() => updateStatus('delivered')}>
+                            <Button className="w-full bg-indigo-600 hover:bg-indigo-500" onClick={() => updateStatus('delivered')}>
                                 <Package className="mr-2 h-4 w-4" /> แจ้งส่งมอบงาน/ของ
                             </Button>
                         )}
@@ -161,47 +161,47 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         )}
                         {order.status === 'completed' && (
                             <div className="space-y-4">
-                                <div className="bg-green-100 text-green-800 p-3 rounded text-center text-sm font-medium">
+                                <div className="bg-green-500/10 text-green-400 p-3 rounded text-center text-sm font-medium border border-green-500/20">
                                     รายการเสร็จสมบูรณ์
                                 </div>
 
                                 {isBuyer && !existingReview && (
-                                    <div className="p-4 border border-dashed rounded bg-white">
-                                        <h4 className="font-bold mb-2">ให้คะแนนร้านค้า</h4>
+                                    <div className="p-4 border border-white/5 border-dashed rounded bg-[#13151f]">
+                                        <h4 className="font-bold mb-2 text-white">ให้คะแนนร้านค้า</h4>
                                         <div className="flex gap-1 mb-3">
                                             {[1, 2, 3, 4, 5].map(s => (
                                                 <button key={s} type="button" onClick={() => setRating(s)}>
-                                                    <Star className={`h-6 w-6 ${s <= rating ? 'fill-yellow-500 text-yellow-500' : 'text-gray-300'}`} />
+                                                    <Star className={`h-6 w-6 ${s <= rating ? 'fill-yellow-500 text-yellow-500' : 'text-gray-600'}`} />
                                                 </button>
                                             ))}
                                         </div>
                                         <Input
                                             placeholder="เขียนรีวิว..."
-                                            className="mb-2"
+                                            className="mb-2 bg-[#0b0c14] border-white/10 text-white"
                                             value={reviewComment}
                                             onChange={e => setReviewComment(e.target.value)}
                                         />
-                                        <Button size="sm" className="w-full" onClick={submitReview}>ส่งรีวิว</Button>
+                                        <Button size="sm" className="w-full bg-indigo-600 hover:bg-indigo-500" onClick={submitReview}>ส่งรีวิว</Button>
                                     </div>
                                 )}
 
                                 {existingReview && (
-                                    <div className="p-4 border rounded bg-white">
+                                    <div className="p-4 border border-white/5 rounded bg-[#13151f]">
                                         <div className="flex items-center justify-between mb-2">
-                                            <span className="font-bold text-sm">รีวิวของคุณ</span>
+                                            <span className="font-bold text-sm text-white">รีวิวของคุณ</span>
                                             <div className="flex text-yellow-500">
                                                 {Array.from({ length: existingReview.rating }).map((_, i) => (
                                                     <Star key={i} className="h-3 w-3 fill-current" />
                                                 ))}
                                             </div>
                                         </div>
-                                        <p className="text-xs text-gray-600">{existingReview.comment_th}</p>
+                                        <p className="text-xs text-gray-400">{existingReview.comment_th}</p>
                                     </div>
                                 )}
                             </div>
                         )}
 
-                        <div className="bg-blue-50 p-3 rounded text-xs text-blue-700 flex items-start gap-2">
+                        <div className="bg-blue-500/10 p-3 rounded text-xs text-blue-300 flex items-start gap-2 border border-blue-500/20">
                             <AlertTriangle className="h-4 w-4 shrink-0" />
                             <div>
                                 เงินของคุณปลอดภัยในระบบ Escrow จนกว่าผู้ซื้อจะกดยืนยันรับของ (โอนเงินให้ผู้ขายหลังสถานะ Completed)
@@ -210,24 +210,26 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                     </CardContent>
                 </Card>
 
-                <Card className="flex-1">
+                <Card className="flex-1 bg-[#1e202e] border-white/5 text-white">
                     <CardHeader>
                         <CardTitle className="text-lg">รายละเอียด</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4 text-sm">
                         <div>
-                            <div className="font-semibold text-gray-500">สินค้า/บริการ</div>
-                            <div className="font-medium">{order.listings.title_th}</div>
+                            <div className="font-semibold text-gray-400">สินค้า/บริการ</div>
+                            <div className="font-medium text-white">{order.listings.title_th}</div>
                         </div>
                         <div>
-                            <div className="font-semibold text-gray-500">ราคา</div>
-                            <div className="font-medium text-lg">{formatPrice(order.net_amount)}</div>
+                            <div className="font-semibold text-gray-400">ราคา</div>
+                            <div className="font-medium text-lg text-indigo-400">{formatPrice(order.net_amount)}</div>
                         </div>
-                        <Separator />
+                        <Separator className="bg-white/5" />
                         <div>
-                            <div className="font-semibold text-gray-500">คู่ค้า</div>
+                            <div className="font-semibold text-gray-400">คู่ค้า</div>
                             <div className="mt-1 flex items-center gap-2">
-                                <div className="h-8 w-8 rounded-full bg-gray-200" />
+                                <div className="h-8 w-8 rounded-full bg-[#13151f] border border-white/10 flex items-center justify-center text-xs">
+                                    {(isBuyer ? order.seller.display_name : order.buyer.display_name)?.[0]?.toUpperCase()}
+                                </div>
                                 <span>{isBuyer ? order.seller.display_name : order.buyer.display_name}</span>
                             </div>
                         </div>
@@ -236,24 +238,24 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
             </div>
 
             {/* Right: Chat System */}
-            <div className="flex-1 flex flex-col bg-white border rounded-lg shadow-sm h-full overflow-hidden">
-                <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+            <div className="flex-1 flex flex-col bg-[#1e202e] border border-white/5 rounded-lg shadow-xl h-full overflow-hidden">
+                <div className="p-4 border-b border-white/5 bg-[#13151f] flex justify-between items-center text-white">
                     <h3 className="font-bold flex items-center gap-2">
-                        <MessageSquare className="h-5 w-5" /> ห้องสนทนา
+                        <MessageSquare className="h-5 w-5 text-indigo-400" /> ห้องสนทนา
                     </h3>
-                    <div className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full font-medium">
+                    <div className="px-3 py-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-xs rounded-full font-medium">
                         ห้ามแลกเปลี่ยน Line/เบอร์โทร เพื่อความปลอดภัย
                     </div>
                 </div>
 
-                <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/50">
+                <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-[#0b0c14]">
                     {messages.map((msg) => {
                         const isMe = msg.sender_id === currentUser?.id
                         return (
                             <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[70%] rounded-lg px-4 py-2 text-sm ${isMe ? 'bg-indigo-600 text-white' : 'bg-white border shadow-sm'}`}>
+                                <div className={`max-w-[70%] rounded-lg px-4 py-2 text-sm ${isMe ? 'bg-indigo-600 text-white' : 'bg-[#1e202e] text-gray-200 border border-white/5'}`}>
                                     <div>{msg.message_th}</div>
-                                    <div className={`text-[10px] mt-1 ${isMe ? 'text-indigo-200' : 'text-gray-400'}`}>
+                                    <div className={`text-[10px] mt-1 ${isMe ? 'text-indigo-200' : 'text-gray-500'}`}>
                                         {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
                                 </div>
@@ -263,15 +265,15 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                     <div ref={messagesEndRef} />
                 </div>
 
-                <div className="p-4 border-t bg-white">
+                <div className="p-4 border-t border-white/5 bg-[#13151f]">
                     <form onSubmit={sendMessage} className="flex gap-2">
                         <Input
                             value={newMessage}
                             onChange={(e) => setNewMessage(e.target.value)}
                             placeholder="พิมพ์ข้อความ..."
-                            className="flex-1"
+                            className="flex-1 bg-[#0b0c14] border-white/10 text-white placeholder:text-gray-600 focus-visible:ring-indigo-500"
                         />
-                        <Button type="submit" size="icon" disabled={!newMessage.trim()}>
+                        <Button type="submit" size="icon" disabled={!newMessage.trim()} className="bg-indigo-600 hover:bg-indigo-500">
                             <Send className="h-4 w-4" />
                         </Button>
                     </form>

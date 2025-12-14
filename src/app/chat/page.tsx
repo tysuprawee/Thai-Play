@@ -220,7 +220,8 @@ export function ChatContent() {
             }, (payload) => {
                 // Handle Read Receipts updates
                 const updatedMsg = payload.new as Message
-                setMessages(prev => prev.map(m => m.id === updatedMsg.id ? updatedMsg : m))
+                console.log('Received Message Update:', updatedMsg) // Debug
+                setMessages(prev => prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m))
             })
             .on('broadcast', { event: 'typing' }, (payload) => {
                 if (payload.payload.userId !== user.id) {
@@ -228,6 +229,27 @@ export function ChatContent() {
                     // Auto-hide after 3 seconds
                     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
                     typingTimeoutRef.current = setTimeout(() => setIsPartnerTyping(false), 3000)
+                }
+            })
+            // Listen for profile updates (Online Status)
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'profiles'
+            }, (payload) => {
+                const updatedProfile = payload.new as Profile
+
+                // Update in conversations list
+                setConversations(prev => prev.map(c => {
+                    if (c.partner.id === updatedProfile.id) {
+                        return { ...c, partner: { ...c.partner, ...updatedProfile } }
+                    }
+                    return c
+                }))
+
+                // Update in single conversation view
+                if (singleConversation && singleConversation.partner.id === updatedProfile.id) {
+                    setSingleConversation(prev => prev ? { ...prev, partner: { ...prev.partner, ...updatedProfile } } : null)
                 }
             })
             .subscribe()

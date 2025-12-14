@@ -202,8 +202,16 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
                             )}
 
                             <div className="space-y-3">
-                                <Button className="w-full text-lg h-12 bg-indigo-600 hover:bg-indigo-500 text-white" size="lg" disabled={listing.stock <= 0}>
-                                    <ShoppingCart className="mr-2 h-5 w-5" /> {listing.stock > 0 ? 'สั่งซื้อเลย' : 'สินค้าหมด'}
+                                <Button className="w-full text-lg h-12 bg-indigo-600 hover:bg-indigo-500 text-white" size="lg" disabled={listing.stock <= 0} asChild>
+                                    {listing.stock > 0 ? (
+                                        <Link href={`/checkout/${listing.id}`}>
+                                            <ShoppingCart className="mr-2 h-5 w-5" /> สั่งซื้อเลย
+                                        </Link>
+                                    ) : (
+                                        <button disabled>
+                                            <ShoppingCart className="mr-2 h-5 w-5" /> สินค้าหมด
+                                        </button>
+                                    )}
                                 </Button>
                                 <Button variant="outline" className="w-full border-white/10 text-white hover:bg-white/5 hover:text-white" asChild>
                                     <Link href={`/chat?seller_id=${listing.seller_id}`}>
