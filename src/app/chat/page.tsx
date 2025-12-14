@@ -131,6 +131,19 @@ export function ChatContent() {
 
         if (!convs) return
 
+        // Fetch unread counts
+        const { data: unreadData } = await supabase
+            .from('messages')
+            .select('conversation_id')
+            .eq('receiver_id', userId)
+            .eq('is_read', false)
+
+        // Count per conversation
+        const unreadMap: Record<string, number> = {}
+        unreadData?.forEach((msg: any) => {
+            unreadMap[msg.conversation_id] = (unreadMap[msg.conversation_id] || 0) + 1
+        })
+
         // Filter out hidden chats and format
         const formatted: Conversation[] = convs
             .filter((c: any) => !c.hidden_for?.includes(userId)) // Client-side soft delete filter
@@ -141,7 +154,7 @@ export function ChatContent() {
                     partner: partner,
                     last_message_preview: c.last_message_preview || 'Start a conversation',
                     updated_at: c.updated_at,
-                    unread_count: 0 // TODO: Add real unread count query if needed
+                    unread_count: unreadMap[c.id] || 0
                 }
             })
 
@@ -461,15 +474,22 @@ export function ChatContent() {
                                 </Avatar>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex justify-between items-baseline mb-1">
-                                        <span className="font-medium text-white truncate">{convo.partner.display_name}</span>
+                                        <span className={`font-medium truncate ${convo.unread_count > 0 ? 'text-white font-bold' : 'text-gray-300'}`}>
+                                            {convo.partner.display_name}
+                                        </span>
                                         <span className="text-xs text-gray-500">
                                             {new Date(convo.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-center">
-                                        <span className="text-sm text-gray-400 truncate w-32">
+                                        <span className={`text-sm truncate w-32 ${convo.unread_count > 0 ? 'text-white font-semibold' : 'text-gray-400'}`}>
                                             {convo.last_message_preview}
                                         </span>
+                                        {convo.unread_count > 0 && (
+                                            <span className="flex items-center justify-center w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                                                {convo.unread_count}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </div>

@@ -78,22 +78,29 @@ export async function sendMessage(conversationId: string, content: string, type:
     const isParticipant = conversation.participant1_id === user.id || conversation.participant2_id === user.id
     if (!isParticipant) throw new Error('Unauthorized')
 
-    const receiverId = conversation.participant1_id === user.id ? conversation.participant2_id : conversation.participant1_id
+    const receiverId = conversation.participant1_id === user.id
+        ? conversation.participant2_id
+        : conversation.participant1_id
 
     // 2. Insert Message
-    const { error } = await supabase.from('messages').insert({
-        conversation_id: conversationId,
-        sender_id: user.id,
-        receiver_id: receiverId,
-        content: content,
-        message_type: type,
-        media_url: mediaUrl
-    })
+    const { data, error } = await supabase
+        .from('messages')
+        .insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            receiver_id: receiverId, // Crucial for notifications
+            content,
+            message_type: type,
+            media_url: mediaUrl,
+            is_read: false
+        })
+        .select()
+        .single()
 
     if (error) throw error
 
     // 3. Update Conversation (last_message, updated_at, unhide if needed)
-    // If the other user hid the chat, sending a message should probably unhide it for them? 
+    // If the other user hid the chat, sending a message should probably unhide it for them?
     // Usually yes, new message brings it back.
 
     // We can reset hidden_for to empty or just remove receiver_id.
