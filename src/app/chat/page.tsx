@@ -259,6 +259,7 @@ export function ChatContent() {
             })
             // UPDATE: Filter usually FAILS (column missing on update). Listen globally for this table and match ID.
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+                console.log('ChatPage: UPDATE payload received:', payload)
                 const updatedMsg = payload.new as Message
                 // Functional update to access latest state without dependency loop
                 setMessages(prev => {
