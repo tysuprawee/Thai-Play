@@ -161,6 +161,54 @@ export function ChatContent() {
         setConversations(formatted)
     }
 
+    // Heartbeat: Update last_seen
+    useEffect(() => {
+        if (!user) return
+
+        const updatePresence = async () => {
+            await supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', user.id)
+        }
+
+        // Initial
+        updatePresence()
+
+        // Loop every 1 min
+        const interval = setInterval(updatePresence, 60 * 1000)
+        return () => clearInterval(interval)
+    }, [user])
+
+    // Subscribe to Profiles (Online Status)
+    useEffect(() => {
+        // Listen to updates on profiles table (global for now, or could filter by partner IDs if possible)
+        const channel = supabase.channel('online-status')
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
+                const updatedProfile = payload.new as Profile
+
+                // Update conversations state if this profile is a partner
+                setConversations(prev => prev.map(c => {
+                    const isP1 = c.partner.id === updatedProfile.id
+                    // Usually partner is nested. We need to check if this updated profile IS the partner
+                    if (c.partner.id === updatedProfile.id) {
+                        return { ...c, partner: { ...c.partner, last_seen: updatedProfile.last_seen } }
+                    }
+                    return c
+                }))
+
+                // Also update singleConversation if active
+                setSingleConversation(prev => {
+                    if (prev && prev.partner.id === updatedProfile.id) {
+                        return { ...prev, partner: { ...prev.partner, last_seen: updatedProfile.last_seen } }
+                    }
+                    return prev
+                })
+            })
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
+    }, [])
+
     // Typing Status Map
     const [typingStatus, setTypingStatus] = useState<Record<string, boolean>>({})
     const typingTimeouts = useRef<Record<string, NodeJS.Timeout>>({})
@@ -508,7 +556,10 @@ export function ChatContent() {
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className={`text-sm truncate w-32 ${convo.unread_count > 0 ? 'text-white font-semibold' : 'text-gray-400'} ${typingStatus[convo.id] ? 'text-green-400 font-medium italic animate-pulse' : ''}`}>
-                                            {typingStatus[convo.id] ? 'กำลังพิมพ์...' : convo.last_message_preview}
+                                            {typingStatus[convo.id]
+                                                ? 'กำลังพิมพ์...'
+                                                : (convo.unread_count > 1 ? `${convo.unread_count} ข้อความใหม่` : convo.last_message_preview)
+                                            }
                                         </span>
                                         {convo.unread_count > 0 && (
                                             <span className="flex items-center justify-center w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full">
@@ -595,13 +646,16 @@ export function ChatContent() {
                                                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </span>
                                                 {isMe && (
-                                                    <span className={cn("text-[10px]", msg.is_read ? "text-indigo-400" : "text-gray-600")}>
-                                                        {/* Double Tick SVG */}
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-3 h-3">
-                                                            <path d="M18 6L7 17L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                            <path d="M22 10L12 20L11 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                        </svg>
-                                                    </span>
+                                                    <div className="flex items-center gap-1">
+                                                        {msg.is_read && <span className="text-[10px] text-indigo-400 font-medium">Read</span>}
+                                                        <span className={cn("text-[10px]", msg.is_read ? "text-indigo-400" : "text-gray-600")}>
+                                                            {/* Double Tick SVG */}
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-3 h-3">
+                                                                <path d="M18 6L7 17L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                                <path d="M22 10L12 20L11 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                            </svg>
+                                                        </span>
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>

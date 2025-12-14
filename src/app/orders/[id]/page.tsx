@@ -26,6 +26,7 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params)
@@ -117,19 +118,28 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
 
     const submitReview = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (rating === 0) return alert('กรุณาให้คะแนน')
+        if (rating === 0) return toast.error('กรุณาให้คะแนน (Please rate)')
 
         try {
             await submitReviewAction(order.id, rating, reviewComment)
-            alert('ขอบคุณสำหรับรีวิว! ระบบจะพาคุณกลับหน้าหลัก')
-            router.push('/')
+            toast.success('ขอบคุณสำหรับรีวิว! (Review submitted)')
+            // Refresh to show the read-only review
+            window.location.reload()
         } catch (error: any) {
-            alert(error.message || 'Failed to submit review')
+            toast.error(error.message || 'Failed to submit review')
         }
     }
 
+    const [pendingStatus, setPendingStatus] = useState<string | null>(null)
+    const [disputeOpen, setDisputeOpen] = useState(false)
+    const [disputeReason, setDisputeReason] = useState('')
+
     const updateStatus = async (status: string) => {
-        if (!confirm('ยืนยันการเปลี่ยนแปลงสถานะ?')) return
+        setPendingStatus(status)
+    }
+
+    const confirmUpdateStatus = async (status: string) => {
+        const loadingToast = toast.loading('Updating status...')
         try {
             if (status === 'delivered') {
                 await confirmDelivery(id)
@@ -144,9 +154,12 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 // Fallback
                 await supabase.from('orders').update({ status }).eq('id', order.id)
             }
-            // Reload to reflect changes (server action revalidate doesn't always hot reload client state immediately if relying on props)
+            toast.dismiss(loadingToast)
+            setPendingStatus(null)
+            // Reload to reflect changes
             window.location.reload()
         } catch (error) {
+            toast.dismiss(loadingToast)
             toast.error('Failed to update status')
         }
     }
@@ -162,13 +175,17 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     }
 
     const handleDispute = async () => {
-        if (!confirm('Are you sure you want to report an issue? Admin will be notified.')) return
-        const reason = prompt('Please describe the issue:')
-        if (!reason) return
+        setDisputeOpen(true)
+    }
+
+    const submitDispute = async () => {
+        if (!disputeReason.trim()) return
 
         try {
-            await disputeOrder(id, reason)
+            await disputeOrder(id, disputeReason)
             toast.success('Issue reported')
+            setDisputeOpen(false)
+            setDisputeReason('')
             window.location.reload()
         } catch (e) {
             toast.error('Failed to report issue')
@@ -398,6 +415,46 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                     </form>
                 </div>
             </div>
+
+            {/* Dialogs */}
+            <AlertDialog open={!!pendingStatus} onOpenChange={(open) => !open && setPendingStatus(null)}>
+                <AlertDialogContent className="bg-[#1e202e] border-white/10 text-white">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>ยืนยันการเปลี่ยนแปลงสถานะ?</AlertDialogTitle>
+                        <AlertDialogDescription className="text-gray-400">
+                            คุณแน่ใจหรือไม่ที่จะเปลี่ยนสถานะเป็น {pendingStatus}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="bg-transparent border-white/10 text-white hover:bg-white/5">ยกเลิก</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-indigo-600 hover:bg-indigo-500"
+                            onClick={() => pendingStatus && confirmUpdateStatus(pendingStatus)}
+                        >
+                            ยืนยัน
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <Dialog open={disputeOpen} onOpenChange={setDisputeOpen}>
+                <DialogContent className="bg-[#1e202e] border-white/10 text-white">
+                    <div className="space-y-4">
+                        <h3 className="text-lg font-bold">แจ้งปัญหา (Report Issue)</h3>
+                        <p className="text-sm text-gray-400">กรุณาระบุรายละเอียดปัญหาเพื่อให้เจ้าหน้าที่ตรวจสอบ</p>
+                        <Input
+                            value={disputeReason}
+                            onChange={e => setDisputeReason(e.target.value)}
+                            placeholder="รายละเอียดปัญหา..."
+                            className="bg-[#0b0c14] border-white/10 text-white"
+                        />
+                        <div className="flex justify-end gap-2">
+                            <Button variant="ghost" onClick={() => setDisputeOpen(false)}>ยกเลิก</Button>
+                            <Button variant="destructive" onClick={submitDispute} disabled={!disputeReason.trim()}>ส่งรายงาน</Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
 
         </div>
     )
