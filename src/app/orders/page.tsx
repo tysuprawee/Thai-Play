@@ -114,7 +114,7 @@ export default function OrdersPage() {
             setReviewDialogOpen(false)
             setRating(5)
             setComment('')
-            fetchOrders() // Refresh to show "Reviewed" status
+            fetchData() // Refresh to show "Reviewed" status
         } catch (error: any) {
             console.error('Review Error:', error)
             toast.error('ไม่สามารถส่งรีวิวได้: ' + error.message)
