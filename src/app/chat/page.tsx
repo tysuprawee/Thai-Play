@@ -147,10 +147,11 @@ export function ChatContent() {
         if (!convs) return
 
         // Fetch unread counts
+        const targetReceiverId = mode === 'admin' ? '00000000-0000-0000-0000-000000000000' : userId
         const { data: unreadData } = await supabase
             .from('messages')
             .select('conversation_id')
-            .eq('receiver_id', userId)
+            .eq('receiver_id', targetReceiverId)
             .eq('is_read', false)
 
         // Count per conversation
@@ -326,8 +327,13 @@ export function ChatContent() {
             // INSERT: New Messages
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversationId}` }, async (payload) => {
                 const newMsg = payload.new as Message
-                if (newMsg.sender_id !== user.id) {
-                    // We received a message while active -> Mark read immediately
+                const SUPPORT_ID = '00000000-0000-0000-0000-000000000000'
+
+                // Check if I am the sender (User or Admin Support)
+                const isMe = newMsg.sender_id === user.id || (viewMode === 'admin' && newMsg.sender_id === SUPPORT_ID)
+
+                if (!isMe) {
+                    // We received a message from Partner -> Mark read immediately
                     await supabase.from('messages').update({ is_read: true }).eq('id', newMsg.id)
                     newMsg.is_read = true
 
@@ -337,10 +343,26 @@ export function ChatContent() {
                         event: 'read-receipt',
                         payload: { userId: user.id, conversationId: selectedConversationId }
                     })
+
+                    setMessages(prev => [...prev, newMsg])
+                    fetchConversations(user.id)
+                } else {
+                    // I sent this (reconcile with optimistic)
+                    setMessages(prev => {
+                        // Find optimistic message (numeric ID) with same content
+                        const optIndex = prev.findIndex(m => m.id.length < 20 && m.content === newMsg.content)
+                        if (optIndex !== -1) {
+                            const newArr = [...prev]
+                            newArr[optIndex] = newMsg
+                            return newArr
+                        }
+                        // Deduplicate by ID just in case
+                        if (prev.some(m => m.id === newMsg.id)) return prev
+
+                        return [...prev, newMsg]
+                    })
+                    fetchConversations(user.id)
                 }
-                if (newMsg.sender_id === user.id) return
-                setMessages(prev => [...prev, newMsg])
-                fetchConversations(user.id)
             })
             // UPDATE: DB Fallback for Read Receipts
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
@@ -359,7 +381,7 @@ export function ChatContent() {
         return () => {
             supabase.removeChannel(channel)
         }
-    }, [selectedConversationId, user])
+    }, [selectedConversationId, user, viewMode])
 
     // Scroll to bottom
     useEffect(() => {

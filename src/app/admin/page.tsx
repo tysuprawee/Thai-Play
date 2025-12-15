@@ -1,5 +1,6 @@
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { DollarSign, Users, ShoppingBag, AlertTriangle } from 'lucide-react'
+import { DollarSign, Users, ShoppingBag, AlertTriangle, Gamepad2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function AdminDashboard() {
@@ -23,7 +24,14 @@ export default async function AdminDashboard() {
     const { count: sellerCount } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
+        .select('*', { count: 'exact', head: true })
         .eq('seller_level', 'new')
+
+    // 4. Pending Game Requests
+    const { count: requestCount } = await supabase
+        .from('game_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending')
 
     return (
         <div className="space-y-8">
@@ -65,6 +73,19 @@ export default async function AdminDashboard() {
                         <p className="text-xs text-gray-500 mt-1">รอการยืนยันตัวตน</p>
                     </CardContent>
                 </Card>
+
+                <Link href="/admin/requests" className="block">
+                    <Card className="bg-[#1e202e] border-white/5 hover:border-indigo-500/50 transition-colors cursor-pointer h-full">
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-sm font-medium text-gray-400">คำขอเพิ่มเกม</CardTitle>
+                            <Gamepad2 className="h-4 w-4 text-pink-500" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold text-white">{requestCount || 0}</div>
+                            <p className="text-xs text-gray-500 mt-1">รอการอนุมัติ</p>
+                        </CardContent>
+                    </Card>
+                </Link>
             </div>
         </div>
     )

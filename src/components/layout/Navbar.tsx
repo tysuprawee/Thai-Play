@@ -256,7 +256,9 @@ export default function Navbar() {
             // 2. Messages INSERT (New Message)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
                 const newMsg = payload.new as any
-                if (newMsg.receiver_id === user.id) {
+                const SUPPORT_ID = '00000000-0000-0000-0000-000000000000'
+
+                if (newMsg.receiver_id === user.id || (isAdmin && newMsg.receiver_id === SUPPORT_ID)) {
                     try {
                         // Determine context: Is this an Order Chat or Regular Chat?
                         // We need the conversation details.
@@ -267,14 +269,11 @@ export default function Navbar() {
                             .single()
 
                         const isOrderChat = !!conv?.order_id
+                        const isSupportMsg = newMsg.receiver_id === SUPPORT_ID
 
                         // Sound Selection
                         // If order chat, try specific sound, else default
                         const soundFile = isOrderChat ? '/sounds/order_notification.mp3' : '/sounds/notification.mp3'
-                        // Fallback logic could be complex in JS Audio, for now just try the file.
-                        // Assuming user will provide 'order_notification.mp3' or we default.
-                        // Actually, let's just stick to default logic unless file exists, but we can't check file existence easily in client.
-                        // Let's assume standard sound for now but distinct handling.
 
                         const audio = new Audio(soundFile)
                         audio.play().catch(e => {
@@ -288,6 +287,14 @@ export default function Navbar() {
                                 action: {
                                     label: 'View',
                                     onClick: () => router.push(`/orders/${conv.order_id}`)
+                                }
+                            })
+                        } else if (isSupportMsg) {
+                            toast.info('New Support Message', {
+                                className: 'bg-indigo-900 border-indigo-500 text-white',
+                                action: {
+                                    label: 'Reply',
+                                    onClick: () => router.push('/chat') // Ideally switch to admin view but state is local
                                 }
                             })
                         } else {
