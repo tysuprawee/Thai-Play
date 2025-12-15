@@ -27,32 +27,72 @@ export default function OrdersPage() {
     const [submittingReview, setSubmittingReview] = useState(false)
     const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
 
-    const fetchOrders = async () => {
+    const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
+
+    const fetchData = async () => {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // Fetch Buying (include Link to Review)
-        const { data: buying } = await supabase
-            .from('orders')
-            .select('*, listings(title_th, listing_type), profiles!seller_id(display_name), reviews(id)')
-            .eq('buyer_id', user.id)
-            .order('created_at', { ascending: false })
+        // 1. Fetch Orders (Buying & Selling) - Parallelize for speed
+        const [buyingRes, sellingRes] = await Promise.all([
+            supabase
+                .from('orders')
+                .select('*, listings(title_th, listing_type), profiles!seller_id(display_name), reviews(id)')
+                .eq('buyer_id', user.id)
+                .order('created_at', { ascending: false }),
+            supabase
+                .from('orders')
+                .select('*, listings(title_th, listing_type), profiles!buyer_id(display_name)')
+                .eq('seller_id', user.id)
+                .order('created_at', { ascending: false })
+        ])
 
-        setBuyingOrders(buying || [])
+        setBuyingOrders(buyingRes.data || [])
+        setSellingOrders(sellingRes.data || [])
 
-        // Fetch Selling
-        const { data: selling } = await supabase
-            .from('orders')
-            .select('*, listings(title_th, listing_type), profiles!buyer_id(display_name)')
-            .eq('seller_id', user.id)
-            .order('created_at', { ascending: false })
+        // 2. Fetch Unread Message Counts for Orders
+        // We look for unread messages sent TO current user, joined to conversations with order_id
+        const { data: unreadMsgs } = await supabase
+            .from('messages')
+            .select(`
+                id, 
+                conversations!inner (
+                    order_id
+                )
+            `)
+            .eq('receiver_id', user.id)
+            .eq('is_read', false)
+            .limit(500) // Reasonable limit
 
-        setSellingOrders(selling || [])
+        // Aggregate counts by order_id
+        const counts: Record<string, number> = {}
+        if (unreadMsgs) {
+            unreadMsgs.forEach((msg: any) => {
+                const orderId = Array.isArray(msg.conversations)
+                    ? msg.conversations[0]?.order_id
+                    : msg.conversations?.order_id
+
+                if (orderId) {
+                    counts[orderId] = (counts[orderId] || 0) + 1
+                }
+            })
+        }
+        setUnreadCounts(counts)
+
         setLoading(false)
     }
 
     useEffect(() => {
-        fetchOrders()
+        fetchData()
+
+        // Subscribe to real-time message updates to keep badge fresh
+        const channel = supabase.channel('order-badges')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
+                fetchData() // Simple refetch on any message change
+            })
+            .subscribe()
+
+        return () => { supabase.removeChannel(channel) }
     }, [])
 
     const handleReviewSubmit = async () => {
@@ -182,7 +222,13 @@ export default function OrdersPage() {
                                 <div className="space-y-3">
                                     {sellingOrders.filter(o => o.status === 'escrowed').map(order => (
                                         <Link key={order.id} href={`/orders/${order.id}`}>
-                                            <Card className="hover:bg-slate-50 transition-colors border-l-4 border-l-indigo-500 shadow-md">
+                                            <Card className="hover:bg-slate-50 transition-colors border-l-4 border-l-indigo-500 shadow-md relative overflow-visible">
+                                                {/* Unread Badge */}
+                                                {unreadCounts[order.id] > 0 && (
+                                                    <div className="absolute -top-2 -right-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 border-2 border-[#0f1016] text-[10px] font-bold text-white shadow-md animate-in zoom-in">
+                                                        {unreadCounts[order.id] > 9 ? '9+' : unreadCounts[order.id]}
+                                                    </div>
+                                                )}
                                                 <CardContent className="p-4 flex items-center justify-between">
                                                     <div className="flex items-center gap-4">
                                                         <div className="p-3 bg-indigo-100 rounded-full">

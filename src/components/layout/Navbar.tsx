@@ -52,7 +52,7 @@ const MEGA_MENU_ITEMS: Record<string, any[]> = {
 import { usePresence } from '@/lib/hooks/usePresence'
 import { useLanguage } from '@/lib/i18n/LanguageContext'
 
-export function Navbar() {
+export default function Navbar() {
     const { t } = useLanguage()
     usePresence()
     const [user, setUser] = useState<SupabaseUser | null>(null)
@@ -133,8 +133,8 @@ export function Navbar() {
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
         setUnreadNotifCount(prev => Math.max(0, prev - 1))
 
-        // DB Update
-        if (user) {
+        // DB Update (Only for system notifications)
+        if (user && !id.startsWith('msg-')) {
             await supabase.from('notifications').update({ is_read: true }).eq('id', id)
         }
     }
@@ -144,7 +144,7 @@ export function Navbar() {
         if (!user) return
 
         const fetchData = async () => {
-            // 1. Fetch Notifications
+            // 1. Fetch System Notifications
             const { data: notifs } = await supabase
                 .from('notifications')
                 .select('*')
@@ -152,42 +152,93 @@ export function Navbar() {
                 .order('created_at', { ascending: false })
                 .limit(10)
 
-            if (notifs) setNotifications(notifs)
-
-            // 2. Fetch Unread Notification Count
-            const { count: notifCount } = await supabase
-                .from('notifications')
-                .select('*', { count: 'exact', head: true })
-                .eq('user_id', user.id)
-                .eq('is_read', false)
-
-            setUnreadNotifCount(notifCount || 0)
-
-            // 3. Fetch Unread Counts (Split by Type)
-            const { data: unreadMsgs } = await supabase
+            // 2. Fetch Unread Messages (Split by Type)
+            const { data: unreadMsgs, error: msgError } = await supabase
                 .from('messages')
-                .select('conversation_id, conversations(order_id)') // Removed !inner to strict check, just left join is fine but messages always have convo
+                .select(`
+                    *,
+                    conversations (
+                        order_id,
+                        orders (
+                            listings (
+                                title_th,
+                                listing_media (
+                                    media_url
+                                )
+                            )
+                        )
+                    ),
+                    sender:sender_id(display_name, avatar_url)
+                `)
                 .eq('receiver_id', user.id)
                 .eq('is_read', false)
-                .limit(100)
+                .limit(50)
+
+            if (msgError) console.error('Navbar: Error fetching unread messages (cache-check)', JSON.stringify(msgError, null, 2))
 
             let dmCount = 0
-            let orderMsgCount = 0
+            const orderMessagesMap = new Map<string, any[]>();
 
             if (unreadMsgs) {
                 unreadMsgs.forEach((msg: any) => {
-                    // Supabase might return single object or array depending on heuristics, safely handle both
                     const convo = Array.isArray(msg.conversations) ? msg.conversations[0] : msg.conversations
+
                     if (convo?.order_id) {
-                        orderMsgCount++
+                        // Group logic
+                        if (!orderMessagesMap.has(convo.order_id)) {
+                            orderMessagesMap.set(convo.order_id, [])
+                        }
+                        orderMessagesMap.get(convo.order_id)?.push({ ...msg, conversation_data: convo })
                     } else {
                         dmCount++
                     }
                 })
             }
 
+            // 3. Create Notification Items from Order Messages
+            const orderNotifs = Array.from(orderMessagesMap.entries()).map(([orderId, msgs]) => {
+                const count = msgs.length
+                const latestMsg = msgs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+                const convo = latestMsg.conversation_data
+                // Handle nested orders array/object
+                const orderData = Array.isArray(convo.orders) ? convo.orders[0] : convo.orders
+
+                // Extract Listing Data
+                const listingData = Array.isArray(orderData?.listings) ? orderData.listings[0] : orderData?.listings
+
+                const orderTitle = listingData?.title_th || 'Order'
+                const senderName = latestMsg.sender?.display_name || 'User'
+
+                // Image Logic: Try Listing Image -> Sender Avatar -> Default
+                const mediaArray = Array.isArray(listingData?.listing_media) ? listingData.listing_media : []
+                const listingImage = mediaArray.length > 0 ? mediaArray[0].media_url : null
+                const senderAvatar = latestMsg.sender?.avatar_url
+
+                return {
+                    id: `msg-${latestMsg.id}`, // Virtual ID
+                    created_at: latestMsg.created_at,
+                    is_read: false,
+                    title: `${senderName} 💬 ${orderTitle}`,
+                    message: count > 1 ? `You have ${count} new messages` : (latestMsg.content || 'Sent an attachment'),
+                    link: `/orders/${orderId}`,
+                    image: listingImage || senderAvatar,
+                    type: 'order_message',
+                    count: count
+                }
+            })
+
+            // 4. Merge & Sort
+            const allNotifs = [...(notifs || []), ...orderNotifs].sort(
+                (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            )
+
+            setNotifications(allNotifs)
+
+            // Set Counts
             setUnreadChatCount(dmCount)
-            setUnreadNotifCount((notifCount || 0) + orderMsgCount)
+
+            const systemUnreadCount = (notifs || []).filter((n: any) => !n.is_read).length
+            setUnreadNotifCount(systemUnreadCount + orderNotifs.length)
         }
 
         fetchData()
@@ -406,12 +457,28 @@ export function Navbar() {
                                                     onClick={() => markAsRead(n.id, n.link)}
                                                     className={`block p-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 relative ${!n.is_read ? 'bg-white/[0.02]' : ''}`}
                                                 >
-                                                    <div className="flex gap-3">
-                                                        {/* Red dot for unread only */}
-                                                        <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${!n.is_read ? 'bg-red-500 shadow-sm shadow-red-500/50' : 'bg-transparent'}`} />
-                                                        <div>
-                                                            <div className={`text-sm ${!n.is_read ? 'font-bold text-white' : 'font-medium text-gray-400'}`}>{n.title}</div>
-                                                            <div className="text-xs text-gray-400 line-clamp-2">{n.message}</div>
+                                                    <div className="flex gap-3 items-start">
+                                                        {/* Image / Avatar */}
+                                                        <div className="relative shrink-0">
+                                                            {n.image ? (
+                                                                <img src={n.image} alt="Order" className="w-10 h-10 rounded-md object-cover border border-white/10" />
+                                                            ) : (
+                                                                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                                                                    <Bell className="w-5 h-5 text-gray-400" />
+                                                                </div>
+                                                            )}
+                                                            {!n.is_read && (
+                                                                <span className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center rounded-full bg-red-500 border-2 border-[#1e202e] text-[9px] font-bold text-white shadow-sm">
+                                                                    {n.count > 1 ? n.count : ''}
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className={`text-sm truncate ${!n.is_read ? 'font-bold text-white' : 'font-medium text-gray-400'}`}>
+                                                                {n.title}
+                                                            </div>
+                                                            <div className="text-xs text-gray-400 truncate">{n.message}</div>
                                                             <div className="text-[10px] text-gray-500 mt-1">{timeAgo(n.created_at)}</div>
                                                         </div>
                                                     </div>
