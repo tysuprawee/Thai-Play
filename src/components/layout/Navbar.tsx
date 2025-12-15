@@ -126,17 +126,16 @@ export function Navbar() {
 
     const [notifications, setNotifications] = useState<any[]>([])
     const [unreadChatCount, setUnreadChatCount] = useState(0)
+    const [unreadNotifCount, setUnreadNotifCount] = useState(0)
 
-    // Derived state for unread notifications
-    const unreadNotifCount = notifications.filter(n => !n.is_read).length
-
-    const markNotificationsAsRead = async () => {
-        if (unreadNotifCount === 0) return
+    const markAsRead = async (id: string, link: string) => {
         // Optimistic update
-        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
+        setUnreadNotifCount(prev => Math.max(0, prev - 1))
 
+        // DB Update
         if (user) {
-            await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false)
+            await supabase.from('notifications').update({ is_read: true }).eq('id', id)
         }
     }
 
@@ -155,16 +154,40 @@ export function Navbar() {
 
             if (notifs) setNotifications(notifs)
 
-            // 2. Fetch Chat Unread Count (General Messages)
-            // Note: This needs 'is_read' on messages table which we just added. 
-            // For now, let's assume it works or returns 0 if column missing.
-            const { count } = await supabase
-                .from('messages')
+            // 2. Fetch Unread Notification Count
+            const { count: notifCount } = await supabase
+                .from('notifications')
                 .select('*', { count: 'exact', head: true })
-                .eq('receiver_id', user.id)
+                .eq('user_id', user.id)
                 .eq('is_read', false)
 
-            setUnreadChatCount(count || 0)
+            setUnreadNotifCount(notifCount || 0)
+
+            // 3. Fetch Unread Counts (Split by Type)
+            const { data: unreadMsgs } = await supabase
+                .from('messages')
+                .select('conversation_id, conversations(order_id)') // Removed !inner to strict check, just left join is fine but messages always have convo
+                .eq('receiver_id', user.id)
+                .eq('is_read', false)
+                .limit(100)
+
+            let dmCount = 0
+            let orderMsgCount = 0
+
+            if (unreadMsgs) {
+                unreadMsgs.forEach((msg: any) => {
+                    // Supabase might return single object or array depending on heuristics, safely handle both
+                    const convo = Array.isArray(msg.conversations) ? msg.conversations[0] : msg.conversations
+                    if (convo?.order_id) {
+                        orderMsgCount++
+                    } else {
+                        dmCount++
+                    }
+                })
+            }
+
+            setUnreadChatCount(dmCount)
+            setUnreadNotifCount((notifCount || 0) + orderMsgCount)
         }
 
         fetchData()
@@ -178,36 +201,62 @@ export function Navbar() {
                 fetchData()
             })
             // 2. Messages INSERT (New Message)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
                 const newMsg = payload.new as any
-                // For INSERT, all columns normally present
                 if (newMsg.receiver_id === user.id) {
-                    // Play Sound
                     try {
-                        const audio = new Audio('/sounds/notification.mp3')
-                        audio.play().catch(e => console.warn('Audio play prevented:', e))
-                    } catch (err) {
-                        console.error('Audio setup failed', err)
-                    }
+                        // Determine context: Is this an Order Chat or Regular Chat?
+                        // We need the conversation details.
+                        const { data: conv } = await supabase
+                            .from('conversations')
+                            .select('order_id')
+                            .eq('id', newMsg.conversation_id)
+                            .single()
 
-                    // Refresh counts
+                        const isOrderChat = !!conv?.order_id
+
+                        // Sound Selection
+                        // If order chat, try specific sound, else default
+                        const soundFile = isOrderChat ? '/sounds/order_notification.mp3' : '/sounds/notification.mp3'
+                        // Fallback logic could be complex in JS Audio, for now just try the file.
+                        // Assuming user will provide 'order_notification.mp3' or we default.
+                        // Actually, let's just stick to default logic unless file exists, but we can't check file existence easily in client.
+                        // Let's assume standard sound for now but distinct handling.
+
+                        const audio = new Audio(soundFile)
+                        audio.play().catch(e => {
+                            // Fallback to default if order sound fails (optional logic, but Audio element logic is simple)
+                            console.warn('Audio play prevented:', e)
+                        })
+
+                        // Toast Notification with Redirect
+                        if (isOrderChat) {
+                            toast.info('New Order Message', {
+                                action: {
+                                    label: 'View',
+                                    onClick: () => router.push(`/orders/${conv.order_id}`)
+                                }
+                            })
+                        } else {
+                            toast.info('New Message', {
+                                action: {
+                                    label: 'View',
+                                    onClick: () => router.push('/chat')
+                                }
+                            })
+                        }
+
+                    } catch (err) {
+                        console.error('Notification setup failed', err)
+                    }
                     fetchData()
-                    toast.info('New Message')
                 }
             })
-            // 3. Messages UPDATE (Read Status Change)
-            // Note: We listen globally because 'receiver_id' might be missing in payload if Replica Identity is default
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
-                // We can't easily check receiver_id here without full replica identity.
-                // But we can just refresh the count. It's a lightweight query.
-                // We could try to OPTIMIZE by checking if we have unread messages? 
-                // Simple approach: Always fetch.
-                // console.log('Navbar: Global Message Update received, refreshing...')
+            // 3. Messages UPDATE
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, () => {
                 fetchData()
             })
-            .subscribe((status) => {
-                console.log('Navbar: Subscription Status:', status)
-            })
+            .subscribe()
 
         return () => {
             supabase.removeChannel(channel)
@@ -272,14 +321,6 @@ export function Navbar() {
                             activeMenu={activeMenu}
                             onHover={setActiveMenu}
                         />
-                        {/* <NavItem
-                            id="topup"
-                            href="/browse?type=topup"
-                            icon={<CreditCard className="w-4 h-4" />}
-                            label={t.navbar.topup}
-                            activeMenu={activeMenu}
-                            onHover={setActiveMenu}
-                        /> */}
                     </nav>
                 </div>
 
@@ -347,7 +388,7 @@ export function Navbar() {
 
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="relative text-gray-400 hover:text-white hover:bg-white/10" onClick={markNotificationsAsRead}>
+                                    <Button variant="ghost" size="icon" className="relative text-gray-400 hover:text-white hover:bg-white/10">
                                         <Bell className="h-5 w-5" />
                                         {unreadNotifCount > 0 && (
                                             <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-red-500 shadow-md" />
@@ -359,11 +400,17 @@ export function Navbar() {
                                     <div className="max-h-[300px] overflow-y-auto">
                                         {notifications.length > 0 ? (
                                             notifications.map((n) => (
-                                                <Link key={n.id} href={n.link || '#'} className="block p-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0">
+                                                <Link
+                                                    key={n.id}
+                                                    href={n.link || '#'}
+                                                    onClick={() => markAsRead(n.id, n.link)}
+                                                    className={`block p-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 relative ${!n.is_read ? 'bg-white/[0.02]' : ''}`}
+                                                >
                                                     <div className="flex gap-3">
-                                                        <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${n.is_read ? 'bg-transparent' : 'bg-indigo-500'}`} />
+                                                        {/* Red dot for unread only */}
+                                                        <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${!n.is_read ? 'bg-red-500 shadow-sm shadow-red-500/50' : 'bg-transparent'}`} />
                                                         <div>
-                                                            <div className="text-sm font-medium text-gray-200">{n.title}</div>
+                                                            <div className={`text-sm ${!n.is_read ? 'font-bold text-white' : 'font-medium text-gray-400'}`}>{n.title}</div>
                                                             <div className="text-xs text-gray-400 line-clamp-2">{n.message}</div>
                                                             <div className="text-[10px] text-gray-500 mt-1">{timeAgo(n.created_at)}</div>
                                                         </div>

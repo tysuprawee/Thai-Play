@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
-export async function getOrCreateConversation(otherUserId: string) {
+export async function getOrCreateConversation(otherUserId: string, orderId?: string) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -12,9 +12,11 @@ export async function getOrCreateConversation(otherUserId: string) {
     }
 
     // Call the database function we created
+    // Updated to support order_id context
     const { data: conversationId, error } = await supabase.rpc('get_or_create_conversation', {
         user1_id: user.id,
-        user2_id: otherUserId
+        user2_id: otherUserId,
+        order_id_param: orderId || null
     })
 
     if (error) {

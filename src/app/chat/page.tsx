@@ -121,6 +121,7 @@ export function ChatContent() {
                 participant2:profiles!participant2_id(id, display_name, avatar_url, last_seen)
             `)
             .or(`participant1_id.eq.${userId},participant2_id.eq.${userId}`)
+            .is('order_id', null) // Only fetch Main DMs (order_id is null)
             .order('updated_at', { ascending: false })
 
         if (error) {
