@@ -1,5 +1,7 @@
 'use client'
 
+import { RequestGameModal } from '@/components/game/RequestGameModal'
+
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -426,6 +428,7 @@ export default function Navbar() {
                         </Button>
                     )}
 
+                    {user && <RequestGameModal />}
                     {user ? (
                         <>
                             <Button variant="ghost" size="icon" className="relative text-gray-400 hover:text-white hover:bg-white/10" asChild>

@@ -60,7 +60,7 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="container flex items-center justify-center min-h-[calc(100vh-4rem)] py-10">
+        <div className="container flex items-center justify-center min-h-[85vh] py-10">
             <Card className="w-full max-w-md bg-[#1e202e] border-white/5">
                 <CardHeader className="text-center">
                     <CardTitle className="text-2xl font-bold text-white">เข้าสู่ระบบ ThaiPlay</CardTitle>

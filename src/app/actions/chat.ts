@@ -119,3 +119,60 @@ export async function sendMessage(conversationId: string, content: string, type:
 
     return true
 }
+
+export async function sendSupportReply(conversationId: string, content: string, type: 'text' | 'image' = 'text', mediaUrl?: string) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) throw new Error('Unauthorized')
+
+    // 1. Verify Admin Role (DB Check)
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+    if (profile?.role !== 'admin') throw new Error('Unauthorized')
+
+    // 2. Verify Conversation Existence & Participants
+    const { data: conversation } = await supabase
+        .from('conversations')
+        .select('participant1_id, participant2_id')
+        .eq('id', conversationId)
+        .single()
+
+    if (!conversation) throw new Error('Chat not found')
+
+    const SUPPORT_ID = '00000000-0000-0000-0000-000000000000'
+
+    // Check if Support is part of this chat
+    if (conversation.participant1_id !== SUPPORT_ID && conversation.participant2_id !== SUPPORT_ID) {
+        throw new Error('Not a support chat')
+    }
+
+    // Determine Receiver (The User)
+    const receiverId = conversation.participant1_id === SUPPORT_ID ? conversation.participant2_id : conversation.participant1_id
+
+    // 3. Send Message AS SUPPORT
+    const { error } = await supabase
+        .from('messages')
+        .insert({
+            conversation_id: conversationId,
+            sender_id: SUPPORT_ID, // Sending as Bot!
+            receiver_id: receiverId,
+            content,
+            message_type: type,
+            media_url: mediaUrl,
+            is_read: false
+        })
+
+    if (error) throw error
+
+    // 4. Update Conversation
+    let preview = type === 'image' ? 'ส่งรูปภาพ' : content
+    if (preview.length > 50) preview = preview.substring(0, 50) + '...'
+
+    await supabase.from('conversations').update({
+        last_message_preview: preview,
+        updated_at: new Date().toISOString(),
+        hidden_for: []
+    }).eq('id', conversationId)
+
+    return true
+}

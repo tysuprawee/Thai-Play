@@ -23,9 +23,12 @@ import {
 import Link from 'next/link'
 import Cropper from 'react-easy-crop'
 
+import { updateSupportAvatar } from '@/app/actions/admin-profile' // New
+
 export default function EditProfilePage() {
     const [loading, setLoading] = useState(false)
     const [user, setUser] = useState<any>(null)
+    const [isAdmin, setIsAdmin] = useState(false) // New
     const [listings, setListings] = useState<any[]>([])
 
     // Form Fields
@@ -33,8 +36,13 @@ export default function EditProfilePage() {
     const [bio, setBio] = useState('')
 
     // Avatar Upload & Crop State
-    const [avatarFile, setAvatarFile] = useState<File | null>(null) // The final file to upload
-    const [avatarPreview, setAvatarPreview] = useState<string | null>(null) // The preview to show in UI
+    const [avatarFile, setAvatarFile] = useState<File | null>(null)
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
+
+    // Support Avatar State (Admin)
+    const [supportAvatarFile, setSupportAvatarFile] = useState<File | null>(null)
+    const [supportAvatarPreview, setSupportAvatarPreview] = useState<string | null>(null)
+    const [cropTarget, setCropTarget] = useState<'personal' | 'support'>('personal')
 
     // Crop Modal State
     const [cropModalOpen, setCropModalOpen] = useState(false)
@@ -69,22 +77,36 @@ export default function EditProfilePage() {
             if (data) {
                 setDisplayName(data.display_name || '')
                 setBio(data.bio || '')
-                setAvatarPreview(user.user_metadata?.avatar_url || null)
+                setAvatarPreview(data.avatar_url || user.user_metadata?.avatar_url || null) // Prefer DB
+
+                if (data.role === 'admin') {
+                    setIsAdmin(true)
+                    // Fetch Support Avatar
+                    const { data: supportData } = await supabase
+                        .from('profiles')
+                        .select('avatar_url')
+                        .eq('id', '00000000-0000-0000-0000-000000000000')
+                        .single()
+                    if (supportData) {
+                        setSupportAvatarPreview(supportData.avatar_url)
+                    }
+                }
             }
         }
         fetchProfile()
     }, [])
 
-    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>, target: 'personal' | 'support' = 'personal') => {
         if (!e.target.files || e.target.files.length === 0) return
         const file = e.target.files[0]
+        setCropTarget(target)
 
         // Read file as URL for cropper
         const reader = new FileReader()
         reader.addEventListener('load', () => {
             setTempImageSrc(reader.result?.toString() || null)
             setCropModalOpen(true)
-            e.target.value = '' // Reset input so same file can be selected again
+            e.target.value = '' // Reset input
         })
         reader.readAsDataURL(file)
     }
@@ -103,8 +125,14 @@ export default function EditProfilePage() {
             const fileName = `avatar-${Date.now()}.jpg`
             const file = new File([croppedImageBlob], fileName, { type: 'image/jpeg' })
 
-            setAvatarFile(file)
-            setAvatarPreview(URL.createObjectURL(croppedImageBlob))
+            if (cropTarget === 'personal') {
+                setAvatarFile(file)
+                setAvatarPreview(URL.createObjectURL(croppedImageBlob))
+            } else {
+                setSupportAvatarFile(file)
+                setSupportAvatarPreview(URL.createObjectURL(croppedImageBlob))
+            }
+
             setCropModalOpen(false)
             setTempImageSrc(null)
             setZoom(1)
@@ -139,6 +167,18 @@ export default function EditProfilePage() {
                 .getPublicUrl(fileName)
 
             avatarUrl = publicUrl
+        }
+
+        // 1.5 Upload Support Avatar (If Admin and Changed)
+        if (isAdmin && supportAvatarFile) {
+            const formData = new FormData()
+            formData.append('file', supportAvatarFile)
+            try {
+                await updateSupportAvatar(formData)
+            } catch (e: any) {
+                console.error(e)
+                alert('Support Avatar Failed: ' + e.message)
+            }
         }
 
         // 2. Update Database Profile
@@ -294,10 +334,31 @@ export default function EditProfilePage() {
                                             type="file"
                                             accept="image/*"
                                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                            onChange={handleAvatarChange}
+                                            onChange={(e) => handleAvatarChange(e, 'personal')}
                                         />
                                     </div>
                                     <p className="text-xs text-gray-500">คลิกที่รูปเพื่อเปลี่ยนรูปโปรไฟล์</p>
+
+                                    {isAdmin && (
+                                        <div className="flex flex-col items-center mt-4 pt-4 border-t border-white/10 w-full">
+                                            <Label className="text-gray-300 mb-2">Support Bot Avatar</Label>
+                                            <div className="relative group cursor-pointer">
+                                                <Avatar className="h-20 w-20 ring-2 ring-indigo-500/20 group-hover:ring-indigo-500 transition-all">
+                                                    <AvatarImage src={supportAvatarPreview || ''} />
+                                                    <AvatarFallback>BOT</AvatarFallback>
+                                                </Avatar>
+                                                <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Pencil className="w-5 h-5 text-white" />
+                                                </div>
+                                                <Input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                    onChange={(e) => handleAvatarChange(e, 'support')}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="space-y-2">

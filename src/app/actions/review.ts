@@ -26,6 +26,7 @@ export async function submitReview(orderId: string, rating: number, comment: str
             order_id: orderId,
             reviewer_id: user.id,
             seller_id: order.seller_id,
+            listing_id: order.listing_id,
             rating,
             comment_th: comment
         })
@@ -37,4 +38,9 @@ export async function submitReview(orderId: string, rating: number, comment: str
 
     revalidatePath(`/orders/${orderId}`)
     revalidatePath('/orders') // Update lists
+
+    // Also revalidate the listing page so the review shows up
+    if (order.listing_id) {
+        revalidatePath(`/listing/${order.listing_id}`)
+    }
 }

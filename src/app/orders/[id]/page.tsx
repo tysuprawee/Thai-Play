@@ -464,7 +464,10 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                     <CardContent className="space-y-4 text-sm">
                         <div>
                             <div className="font-semibold text-gray-400">สินค้า/บริการ</div>
-                            <div className="font-medium text-white">{order.listings.title_th}</div>
+                            <Link href={`/listing/${order.listings.id}`} className="font-medium text-white hover:text-indigo-400 hover:underline transition-colors block">
+                                {order.listings.title_th}
+                                <ExternalLink className="inline-block ml-1 h-3 w-3 mb-0.5" />
+                            </Link>
                         </div>
                         <div>
                             <div className="font-semibold text-gray-400">ราคา</div>

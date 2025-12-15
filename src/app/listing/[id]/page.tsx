@@ -16,24 +16,14 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
         notFound()
     }
 
-    // Fetch Reviews
-    const { data: relevantOrders } = await supabase
-        .from('orders')
-        .select('id')
+    // Fetch Reviews (Directly via listing_id)
+    const { data: reviewsData } = await supabase
+        .from('reviews')
+        .select('*, profiles!reviews_reviewer_id_fkey(display_name, avatar_url)')
         .eq('listing_id', id)
-        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
 
-    let reviews: any[] = []
-    if (relevantOrders && relevantOrders.length > 0) {
-        const orderIds = relevantOrders.map(o => o.id)
-        const { data: reviewsData } = await supabase
-            .from('reviews')
-            .select('*, profiles(display_name, avatar_url), orders(created_at)')
-            .in('order_id', orderIds)
-            .order('created_at', { ascending: false })
-
-        if (reviewsData) reviews = reviewsData
-    }
+    const reviews = reviewsData || []
 
     const specifications = listing.specifications as Record<string, string> || {}
     const tags = listing.tags as string[] || []
