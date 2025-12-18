@@ -302,7 +302,7 @@ export default function Navbar() {
                 audio.play().catch(e => console.warn('Audio play prevented', e))
 
                 toast.success(`🎉 ขายสินค้าได้แล้ว!`, {
-                    description: `${listing?.title_th || 'สินค้า'} - ฿${newOrder.net_amount}`,
+                    description: `${listing?.title_th || 'สินค้า'} - ฿${newOrder.amount}`,
                     duration: 5000,
                     action: {
                         label: 'ดูออเดอร์',

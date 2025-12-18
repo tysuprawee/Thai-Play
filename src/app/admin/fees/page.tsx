@@ -18,6 +18,7 @@ export default function AdminFeesPage() {
     const [categories, setCategories] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState<string | null>(null)
+    const [edits, setEdits] = useState<Record<string, string>>({})
     const supabase = createClient()
 
     const fetchCategories = async () => {
@@ -34,15 +35,26 @@ export default function AdminFeesPage() {
         fetchCategories()
     }, [])
 
-    const updateFee = async (id: string, newFee: string) => {
+    const handleChange = (id: string, value: string) => {
+        setEdits(prev => ({ ...prev, [id]: value }))
+    }
+
+    const updateFee = async (id: string, currentFee: number) => {
         setSaving(id)
+        // Use edited value, or current value, or default 0
+        const valStr = edits[id]
+        const val = valStr !== undefined ? parseFloat(valStr) : currentFee
+        const finalFee = isNaN(val) ? 0 : val
+
         const { error } = await supabase
             .from('categories')
-            .update({ fee_percent: parseFloat(newFee) })
+            .update({ fee_percent: finalFee })
             .eq('id', id)
 
         if (!error) {
-            // Success animation or toast could go here
+            // Update local state to reflect saved
+            setCategories(prev => prev.map(c => c.id === id ? { ...c, fee_percent: finalFee } : c))
+            // Clear edit state for this id? Or keep it? keeping it is fine.
         } else {
             alert('Error: ' + error.message)
         }
@@ -81,12 +93,9 @@ export default function AdminFeesPage() {
                                     <div className="flex items-center gap-2 max-w-[150px]">
                                         <Input
                                             type="number"
-                                            defaultValue={cat.fee_percent || 5.0}
+                                            value={edits[cat.id] !== undefined ? edits[cat.id] : (cat.fee_percent ?? 5)}
                                             className="h-8 bg-[#13151f] border-white/10 text-white"
-                                            onChange={(e) => {
-                                                // Just local state update if needed, but we save on button click
-                                                cat.newFee = e.target.value
-                                            }}
+                                            onChange={(e) => handleChange(cat.id, e.target.value)}
                                         />
                                         <span className="text-gray-500">%</span>
                                     </div>
@@ -95,7 +104,7 @@ export default function AdminFeesPage() {
                                     <Button
                                         size="sm"
                                         className="bg-indigo-600 hover:bg-indigo-500"
-                                        onClick={() => updateFee(cat.id, cat.newFee || cat.fee_percent)}
+                                        onClick={() => updateFee(cat.id, cat.fee_percent)}
                                         disabled={saving === cat.id}
                                     >
                                         {saving === cat.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -109,3 +118,4 @@ export default function AdminFeesPage() {
         </div>
     )
 }
+

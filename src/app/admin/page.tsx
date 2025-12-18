@@ -24,7 +24,7 @@ export default async function AdminDashboard() {
     const { count: sellerCount } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
-        .select('*', { count: 'exact', head: true })
+
         .eq('seller_level', 'new')
 
     // 4. Pending Game Requests

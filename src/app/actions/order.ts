@@ -81,7 +81,42 @@ export async function createOrder(listingId: string, paymentMethod: string) {
 
 // Legacy/Real Payment Confirmation (Now behaves like mock/auto-approve as per request)
 export async function confirmPayment(orderId: string) {
-    await updateOrderStatus(orderId, 'escrowed')
+    const supabase = await createClient()
+
+    // Fetch order with listing details to check delivery method
+    const { data: order } = await supabase
+        .from('orders')
+        .select('*, listings(specifications)')
+        .eq('id', orderId)
+        .single()
+
+    if (!order) throw new Error('Order not found')
+
+    const isInstant = order.listings?.specifications?.['Delivery Method'] === 'Instant'
+
+    if (isInstant) {
+        // Auto-complete for Instant Delivery
+        // Funds released 24h after purchase (since it's instant)
+        const fundsReleaseAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+        const { error } = await supabase
+            .from('orders')
+            .update({
+                status: 'completed',
+                funds_release_at: fundsReleaseAt,
+                payout_status: 'pending',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId)
+
+        if (error) throw new Error('Failed to update status')
+
+        revalidatePath(`/orders/${orderId}`)
+        revalidatePath('/orders')
+    } else {
+        // Manual delivery for Standard orders
+        await updateOrderStatus(orderId, 'escrowed')
+    }
 }
 
 export async function updateOrderStatus(orderId: string, newStatus: string) {
@@ -106,8 +141,8 @@ export async function updateOrderStatus(orderId: string, newStatus: string) {
 
 // 1. Mock Payment (For Demo/PromptPay Manual Confirm)
 export async function mockPaymentSuccess(orderId: string) {
-    // Sets to 'escrowed' - meaning money is held by system (mocked)
-    await updateOrderStatus(orderId, 'escrowed')
+    // Reuse the main confirmation logic which handles Instant Delivery checks
+    await confirmPayment(orderId)
 }
 
 // 2. Seller Delivers

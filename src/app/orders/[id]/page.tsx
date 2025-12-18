@@ -173,8 +173,26 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m))
             })
             // Watch order updates too
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${id}` }, (payload) => {
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${id}` }, async (payload) => {
+                const newStatus = payload.new.status
                 setOrder((prev: any) => ({ ...prev, ...payload.new }))
+
+                // Realtime: If order becomes 'delivered' or 'completed' and it's instant delivery (and we are buyer), fetch secret
+                const isBuyer = currentUser.id === orderData.buyer_id
+                const isInstant = orderData.listings?.specifications?.['Delivery Method'] === 'Instant'
+
+                if (isBuyer && isInstant && (newStatus === 'delivered' || newStatus === 'completed') && !secretCode) {
+                    const { data: secretData } = await supabase
+                        .from('listing_secrets')
+                        .select('content')
+                        .eq('listing_id', orderData.listing_id)
+                        .single()
+
+                    if (secretData) {
+                        setSecretCode(secretData.content)
+                        toast.success('Received Instant Delivery!')
+                    }
+                }
             })
             .subscribe()
 
@@ -351,10 +369,10 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         {order.status === 'pending_payment' && isBuyer && (
                             <div className="space-y-4">
                                 <div className="bg-[#13151f] p-6 rounded-xl border border-white/10 flex flex-col items-center">
-                                    <PromptPayQR amount={order.net_amount} />
+                                    <PromptPayQR amount={order.amount} />
                                     <p className="text-gray-400 text-sm mt-4 text-center max-w-xs">
                                         กรุณาสแกน QR Code ผ่านแอปธนาคารของท่าน<br />
-                                        ยอดโอน: <span className="text-indigo-400 font-bold">{formatPrice(order.net_amount)}</span>
+                                        ยอดโอน: <span className="text-indigo-400 font-bold">{formatPrice(order.amount)}</span>
                                     </p>
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
@@ -573,7 +591,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         </div>
                         <div>
                             <div className="font-semibold text-gray-400">ราคา</div>
-                            <div className="font-medium text-lg text-indigo-400">{formatPrice(order.net_amount)}</div>
+                            <div className="font-medium text-lg text-indigo-400">{formatPrice(order.amount)}</div>
                         </div>
                         <Separator className="bg-white/5" />
                         <div>
