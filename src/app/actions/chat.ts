@@ -45,17 +45,33 @@ export async function deleteConversation(conversationId: string) {
 
     const { data: conversation } = await supabase
         .from('conversations')
-        .select('hidden_for')
+        .select('hidden_for, participant1_id, participant2_id')
         .eq('id', conversationId)
         .single()
 
     if (!conversation) return
 
+    // Prevent deleting Support Chat
+    const SUPPORT_ID = '00000000-0000-0000-0000-000000000000'
+    if (conversation.participant1_id === SUPPORT_ID || conversation.participant2_id === SUPPORT_ID) {
+        throw new Error('Cannot delete Support Chat')
+    }
+
     const currentHidden = conversation.hidden_for || []
     if (!currentHidden.includes(user.id)) {
+        const updates: any = { hidden_for: [...currentHidden, user.id] }
+        const now = new Date().toISOString()
+
+        // Set cleared_at timestamp for history clearing
+        if (conversation.participant1_id === user.id) {
+            updates.participant1_cleared_at = now
+        } else if (conversation.participant2_id === user.id) {
+            updates.participant2_cleared_at = now
+        }
+
         await supabase
             .from('conversations')
-            .update({ hidden_for: [...currentHidden, user.id] })
+            .update(updates)
             .eq('id', conversationId)
     }
 

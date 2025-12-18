@@ -12,7 +12,7 @@ export default async function Page() {
   // Fetch Latest Listings
   const { data: listings } = await supabase
     .from('listings')
-    .select('*, profiles(display_name, seller_level), listing_media(media_url)')
+    .select('*, profiles(display_name, seller_level, avatar_url), listing_media(media_url)')
     .eq('status', 'active')
     .order('created_at', { ascending: false })
     .limit(8)

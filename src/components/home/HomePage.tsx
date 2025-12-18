@@ -223,11 +223,24 @@ export function HomePage({ categories, listings }: HomePageProps) {
                                         <p className="text-sm text-gray-500 line-clamp-2 mb-4 h-10">{item.description_th}</p>
                                         <div className="flex items-center justify-between mt-auto pt-3 border-t border-white/5">
                                             <span className="text-lg font-bold text-white">{formatPrice(item.price_min)}</span>
-                                            <span className="text-xs text-gray-500 flex items-center gap-1">
-                                                <div className="w-4 h-4 rounded-full bg-indigo-500/20 flex items-center justify-center text-[8px] text-indigo-400">
-                                                    {item.profiles?.display_name?.[0] || 'U'}
+                                            <span className="text-xs text-gray-500 flex items-center gap-2">
+                                                <div className="w-5 h-5 rounded-full overflow-hidden relative bg-indigo-500/20 border border-white/10 flex-shrink-0">
+                                                    {item.profiles?.avatar_url ? (
+                                                        <Image
+                                                            src={item.profiles.avatar_url}
+                                                            alt={item.profiles.display_name || 'Seller'}
+                                                            fill
+                                                            className="object-cover"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center text-[10px] text-indigo-400 font-bold">
+                                                            {item.profiles?.display_name?.[0]?.toUpperCase() || 'U'}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                {item.profiles?.display_name || 'Seller'}
+                                                <span className="truncate max-w-[80px]">
+                                                    {item.profiles?.display_name || 'Unknown Seller'}
+                                                </span>
                                             </span>
                                         </div>
                                     </CardContent>

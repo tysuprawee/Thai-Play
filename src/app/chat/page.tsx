@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Send, Search, MessageSquare, Image as ImageIcon, MoreVertical, Trash2, X } from 'lucide-react'
+import { Send, Search, MessageSquare, Image as ImageIcon, MoreVertical, Trash2, X, Flag } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog'
@@ -16,6 +16,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { ReportUserDialog } from '@/components/chat/ReportUserDialog'
 import { getOrCreateConversation, deleteConversation, sendMessage, sendSupportReply } from '@/app/actions/chat'
 
 interface Profile {
@@ -41,6 +42,12 @@ interface Conversation {
     last_message_preview: string
     updated_at: string
     unread_count: number
+    participant1_cleared_at?: string
+    participant2_cleared_at?: string
+    participant1?: any // Need access to ID to know who is who locally if needed, but we already have partner. 
+    // Better to store IDs in conversation object in state? 
+    // Actually fetched object differs from interface somewhat.
+    // Let's make sure we pass them through.
 }
 
 export function ChatContent() {
@@ -58,6 +65,7 @@ export function ChatContent() {
     const [newMessage, setNewMessage] = useState('')
     const [loadingMessages, setLoadingMessages] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
+    const [showReportDialog, setShowReportDialog] = useState(false) // Report Dialog State
 
     // State for Image Preview
     const [imageFile, setImageFile] = useState<File | null>(null)
@@ -120,7 +128,10 @@ export function ChatContent() {
                 id,
                 last_message_preview,
                 updated_at,
+                updated_at,
                 hidden_for,
+                participant1_cleared_at,
+                participant2_cleared_at,
                 participant1:profiles!participant1_id(id, display_name, avatar_url, last_seen),
                 participant2:profiles!participant2_id(id, display_name, avatar_url, last_seen)
             `)
@@ -170,7 +181,10 @@ export function ChatContent() {
                     partner: partner,
                     last_message_preview: c.last_message_preview || 'Start a conversation',
                     updated_at: c.updated_at,
-                    unread_count: unreadMap[c.id] || 0
+                    unread_count: unreadMap[c.id] || 0,
+                    participant1_cleared_at: c.participant1_cleared_at,
+                    participant2_cleared_at: c.participant2_cleared_at,
+                    p1_id: c.participant1.id // Store P1 ID to identify self later
                 }
             })
 
@@ -308,7 +322,26 @@ export function ChatContent() {
                 .order('created_at', { ascending: true })
 
             if (data) {
-                setMessages(data)
+                // Filter based on cleared history
+                const conv = conversations.find(c => c.id === selectedConversationId) || singleConversation
+                let visibleMessages = data
+
+                if (conv && user) {
+                    // Start with basic assumption: I am either P1 or P2.
+                    // But wait, `conversations` list from fetch has `p1_id`.
+                    // We need to ensure `singleConversation` also has it.
+
+                    const p1Id = (conv as any).p1_id || (conv as any).participant1?.id // Backwards compat or single fetch
+                    const myClearedAt = p1Id === user.id
+                        ? conv.participant1_cleared_at
+                        : conv.participant2_cleared_at
+
+                    if (myClearedAt) {
+                        const clearDate = new Date(myClearedAt).getTime()
+                        visibleMessages = data.filter(m => new Date(m.created_at).getTime() > clearDate)
+                    }
+                }
+                setMessages(visibleMessages)
             }
             setLoadingMessages(false)
         }
@@ -565,6 +598,24 @@ export function ChatContent() {
         return { text: 'Offline', color: 'text-gray-500' }
     }
 
+    const formatSmartDate = (dateStr: string) => {
+        if (!dateStr) return ''
+        const date = new Date(dateStr)
+        const now = new Date()
+        const diffMs = now.getTime() - date.getTime()
+        const diffSec = Math.floor(diffMs / 1000)
+        const diffMin = Math.floor(diffSec / 60)
+        const diffHour = Math.floor(diffMin / 60)
+        const diffDay = Math.floor(diffHour / 24)
+
+        if (diffSec < 60) return 'Just now'
+        if (diffMin < 60) return `${diffMin}m ago`
+        if (diffHour < 24) return `${diffHour}h ago`
+        if (diffDay === 1) return 'Yesterday'
+        if (diffDay < 7) return `${diffDay}d ago`
+        return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+    }
+
     const presence = activeConvo ? getPresenceStatus(activeConvo.partner.last_seen, activeConvo.partner.id) : null
 
     return (
@@ -618,7 +669,7 @@ export function ChatContent() {
                                             {convo.partner.display_name}
                                         </span>
                                         <span className="text-xs text-gray-500">
-                                            {new Date(convo.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            {formatSmartDate(convo.updated_at)}
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-center">
@@ -669,11 +720,24 @@ export function ChatContent() {
                                         </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="bg-[#13151f] border-white/10 text-white">
-                                        <DropdownMenuItem className="text-red-400 focus:text-red-400 focus:bg-red-500/10" onClick={handleDeleteChat}>
-                                            <Trash2 className="w-4 h-4 mr-2" /> ลบแชท (Delete)
-                                        </DropdownMenuItem>
+                                        {activeConvo.partner.id !== '00000000-0000-0000-0000-000000000000' && (
+                                            <>
+                                                <DropdownMenuItem className="focus:bg-white/10" onClick={() => setShowReportDialog(true)}>
+                                                    <Flag className="w-4 h-4 mr-2" /> Report User
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem className="text-red-400 focus:text-red-400 focus:bg-red-500/10" onClick={handleDeleteChat}>
+                                                    <Trash2 className="w-4 h-4 mr-2" /> ลบแชท (Delete)
+                                                </DropdownMenuItem>
+                                            </>
+                                        )}
                                     </DropdownMenuContent>
                                 </DropdownMenu>
+                                <ReportUserDialog
+                                    isOpen={showReportDialog}
+                                    onOpenChange={setShowReportDialog}
+                                    reportedId={activeConvo.partner.id}
+                                    reportedName={activeConvo.partner.display_name}
+                                />
                             </div>
 
                             {/* Messages Container */}
@@ -820,7 +884,7 @@ export function ChatContent() {
                     )}
                 </div>
             </div>
-        </div>
+        </div >
     )
 }
 

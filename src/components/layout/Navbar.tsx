@@ -146,6 +146,7 @@ export default function Navbar() {
         if (!user) return
 
         const fetchData = async () => {
+            const SUPPORT_ID = '00000000-0000-0000-0000-000000000000'
             // 1. Fetch System Notifications
             const { data: notifs } = await supabase
                 .from('notifications')
@@ -155,7 +156,7 @@ export default function Navbar() {
                 .limit(10)
 
             // 2. Fetch Unread Messages (Split by Type)
-            const { data: unreadMsgs, error: msgError } = await supabase
+            let msgQuery = supabase
                 .from('messages')
                 .select(`
                     *,
@@ -172,20 +173,33 @@ export default function Navbar() {
                     ),
                     sender:sender_id(display_name, avatar_url)
                 `)
-                .eq('receiver_id', user.id)
                 .eq('is_read', false)
                 .limit(50)
+
+            if (isAdmin) {
+                msgQuery = msgQuery.or(`receiver_id.eq.${user.id},receiver_id.eq.${SUPPORT_ID}`)
+            } else {
+                msgQuery = msgQuery.eq('receiver_id', user.id)
+            }
+
+            const { data: unreadMsgs, error: msgError } = await msgQuery
 
             if (msgError) console.error('Navbar: Error fetching unread messages (cache-check)', JSON.stringify(msgError, null, 2))
 
             let dmCount = 0
-            const orderMessagesMap = new Map<string, any[]>();
+            const orderMessagesMap = new Map<string, any[]>()
+            const supportMessagesMap = new Map<string, any[]>()
 
             if (unreadMsgs) {
                 unreadMsgs.forEach((msg: any) => {
                     const convo = Array.isArray(msg.conversations) ? msg.conversations[0] : msg.conversations
 
-                    if (convo?.order_id) {
+                    if (msg.receiver_id === SUPPORT_ID) {
+                        if (!supportMessagesMap.has(msg.conversation_id)) {
+                            supportMessagesMap.set(msg.conversation_id, [])
+                        }
+                        supportMessagesMap.get(msg.conversation_id)?.push(msg)
+                    } else if (convo?.order_id) {
                         // Group logic
                         if (!orderMessagesMap.has(convo.order_id)) {
                             orderMessagesMap.set(convo.order_id, [])
@@ -229,8 +243,26 @@ export default function Navbar() {
                 }
             })
 
-            // 4. Merge & Sort
-            const allNotifs = [...(notifs || []), ...orderNotifs].sort(
+            // 4. Create Notification Items from Support Messages (Admin Only)
+            const supportNotifs = Array.from(supportMessagesMap.entries()).map(([convId, msgs]) => {
+                const count = msgs.length
+                const latestMsg = msgs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+
+                return {
+                    id: `support-${latestMsg.id}`,
+                    created_at: latestMsg.created_at,
+                    is_read: false,
+                    title: `Support: ${latestMsg.sender?.display_name || 'User'}`,
+                    message: count > 1 ? `${count} new messages` : (latestMsg.content || 'Sent an attachment'),
+                    link: `/chat`, // Admin will see support inbox there
+                    image: latestMsg.sender?.avatar_url,
+                    type: 'support_message',
+                    count: count
+                }
+            })
+
+            // 5. Merge & Sort
+            const allNotifs = [...(notifs || []), ...orderNotifs, ...supportNotifs].sort(
                 (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
             )
 
@@ -240,7 +272,7 @@ export default function Navbar() {
             setUnreadChatCount(dmCount)
 
             const systemUnreadCount = (notifs || []).filter((n: any) => !n.is_read).length
-            setUnreadNotifCount(systemUnreadCount + orderNotifs.length)
+            setUnreadNotifCount(systemUnreadCount + orderNotifs.length + supportNotifs.length)
         }
 
         fetchData()
@@ -321,7 +353,7 @@ export default function Navbar() {
         return () => {
             supabase.removeChannel(channel)
         }
-    }, [user])
+    }, [user, isAdmin])
 
     // Time Ago Helper
     function timeAgo(dateString: string) {
