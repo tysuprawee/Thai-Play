@@ -178,14 +178,14 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 setOrder((prev: any) => ({ ...prev, ...payload.new }))
 
                 // Realtime: If order becomes 'delivered' or 'completed' and it's instant delivery (and we are buyer), fetch secret
-                const isBuyer = currentUser.id === orderData.buyer_id
-                const isInstant = orderData.listings?.specifications?.['Delivery Method'] === 'Instant'
+                const isBuyer = currentUser.id === order.buyer_id
+                const isInstant = order.listings?.specifications?.['Delivery Method'] === 'Instant'
 
                 if (isBuyer && isInstant && (newStatus === 'delivered' || newStatus === 'completed') && !secretCode) {
                     const { data: secretData } = await supabase
                         .from('listing_secrets')
                         .select('content')
-                        .eq('listing_id', orderData.listing_id)
+                        .eq('listing_id', order.listing_id)
                         .single()
 
                     if (secretData) {
@@ -231,7 +231,6 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
             toast.error('Failed to send')
         }
     }
-
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0 || !currentUser || !conversationId || !order) return
 
