@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
-import { Gamepad2, Plus } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Gamepad2, Plus, Sparkles, Bug } from "lucide-react"
 import { useLanguage } from "@/lib/i18n/LanguageContext"
 
 export function RequestGameModal() {
@@ -17,8 +18,27 @@ export function RequestGameModal() {
     const [loading, setLoading] = useState(false)
     const [name, setName] = useState("")
     const [description, setDescription] = useState("")
+    const [requestType, setRequestType] = useState<'game' | 'feature' | 'bug'>('game')
 
     const isThai = language === 'th'
+
+    const getTitle = () => {
+        if (requestType === 'game') return isThai ? "ขอเพิ่มเกมใหม่" : "Request New Game"
+        if (requestType === 'feature') return isThai ? "ขอเพิ่มฟีเจอร์" : "Request Feature"
+        return isThai ? "แจ้งปัญหา" : "Report Bug"
+    }
+
+    const getDescription = () => {
+        if (requestType === 'game') return isThai ? "เกมที่คุณต้องการยังไม่มีในระบบ? บอกเราได้เลย!" : "Game missing? Tell us!"
+        if (requestType === 'feature') return isThai ? "ต้องการฟีเจอร์อะไรบ้างบอกเราได้เลย" : "What feature do you want?"
+        return isThai ? "พบเจอปัญหาการใช้งานแจ้งเราได้เลย" : "Found a bug? Let us know!"
+    }
+
+    const getNameLabel = () => {
+        if (requestType === 'game') return isThai ? "ชื่อเกม" : "Game Name"
+        if (requestType === 'feature') return isThai ? "ชื่อฟีเจอร์" : "Feature Name"
+        return isThai ? "หัวข้อปัญหา" : "Bug Title"
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -38,8 +58,9 @@ export function RequestGameModal() {
                 .from('game_requests')
                 .insert({
                     requester_id: user.id,
-                    game_name: name,
-                    description: description
+                    game_name: name, // Using generic 'game_name' logic for title
+                    description: description,
+                    request_type: requestType
                 })
 
             if (error) throw error
@@ -56,39 +77,61 @@ export function RequestGameModal() {
         }
     }
 
+    const handleOpen = (type: 'game' | 'feature' | 'bug') => {
+        setRequestType(type)
+        setTimeout(() => setOpen(true), 100) // slight delay to prevent focus issues with dropdown
+    }
+
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="hidden md:flex gap-2">
-                    <Plus className="h-4 w-4" />
-                    <span>{isThai ? "ขอเพิ่มเกม" : "Request Game"}</span>
-                </Button>
-            </DialogTrigger>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="hidden md:flex gap-2">
+                        <Plus className="h-4 w-4" />
+                        <span>{isThai ? "ขอคำร้อง" : "Requests"}</span>
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-[#1e202e] border-white/10 text-white">
+                    <DropdownMenuItem onClick={() => handleOpen('game')} className="focus:bg-white/10 cursor-pointer">
+                        <Gamepad2 className="mr-2 h-4 w-4 text-pink-400" />
+                        {isThai ? "ขอเพิ่มเกม" : "Add Game"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleOpen('feature')} className="focus:bg-white/10 cursor-pointer">
+                        <Sparkles className="mr-2 h-4 w-4 text-yellow-400" />
+                        {isThai ? "ขอเพิ่มฟีเจอร์" : "Add Feature"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleOpen('bug')} className="focus:bg-white/10 cursor-pointer">
+                        <Bug className="mr-2 h-4 w-4 text-red-400" />
+                        {isThai ? "แจ้งปัญหา" : "Report Bug"}
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
-                    <DialogTitle>{isThai ? "ขอเพิ่มเกมใหม่" : "Request New Game"}</DialogTitle>
+                    <DialogTitle>{getTitle()}</DialogTitle>
                     <DialogDescription>
-                        {isThai ? "เกมที่คุณต้องการยังไม่มีในระบบ? บอกเราได้เลย!" : "Game missing? Tell us!"}
+                        {getDescription()}
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="grid gap-4 py-4">
                     <div className="grid gap-2">
-                        <Label htmlFor="name">{isThai ? "ชื่อเกม" : "Game Name"}</Label>
+                        <Label htmlFor="name">{getNameLabel()}</Label>
                         <Input
                             id="name"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            placeholder="Ex: Genshin Impact"
+                            placeholder={requestType === 'game' ? "Ex: Genshin Impact" : "..."}
                             required
                         />
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="description">{isThai ? "รายละเอียดเพิ่มเติม (ถ้ามี)" : "Description (Optional)"}</Label>
+                        <Label htmlFor="description">{isThai ? "รายละเอียดเพิ่มเติม" : "Description"}</Label>
                         <Textarea
                             id="description"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            placeholder={isThai ? "ทำไมถึงอยากให้เพิ่มเกมนี้?" : "Reason?"}
+                            placeholder={isThai ? "รายละเอียด..." : "Details..."}
                         />
                     </div>
                     <Button type="submit" disabled={loading}>

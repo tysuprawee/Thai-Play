@@ -33,9 +33,13 @@ export default function SellPage() {
     const [images, setImages] = useState<{ file: File, preview: string }[]>([])
 
     // Specifications State
-    const [specs, setSpecs] = useState<{ key: string, value: string }[]>([])
+    // Default Delivery Method to Instant
+    const [specs, setSpecs] = useState<{ key: string, value: string }[]>([{ key: 'Delivery Method', value: 'Instant' }])
     const [newSpecKey, setNewSpecKey] = useState('')
     const [newSpecValue, setNewSpecValue] = useState('')
+
+    // Secret Info for Instant Delivery
+    const [secretInfo, setSecretInfo] = useState('')
 
     // Tags State
     const [tagsInput, setTagsInput] = useState('')
@@ -149,6 +153,16 @@ export default function SellPage() {
                 })
             }
 
+            // 3. Save Secret Info if Instant Delivery
+            const deliveryMethod = specs.find(s => s.key === 'Delivery Method')?.value
+            if (deliveryMethod === 'Instant' && secretInfo.trim()) {
+                const { error: secretError } = await supabase.from('listing_secrets').insert({
+                    listing_id: newListingId,
+                    content: secretInfo
+                })
+                if (secretError) console.error('Failed to save secret:', secretError)
+            }
+
             router.push(`/listing/${newListingId}`)
         } catch (error: any) {
             console.error('Upload Error:', error)
@@ -216,33 +230,67 @@ export default function SellPage() {
                                 <div className="space-y-2">
                                     <Label className="text-gray-300">วิธีการส่งมอบ (Delivery Method)</Label>
                                     <Select
-                                        onValueChange={(val) => setSpecs(prev => [...prev.filter(s => s.key !== 'Delivery Method'), { key: 'Delivery Method', value: val }])}
-                                        defaultValue="Coordinated"
+                                        onValueChange={(val) => setSpecs(prev => {
+                                            const others = prev.filter(s => s.key !== 'Delivery Method')
+                                            return [...others, { key: 'Delivery Method', value: val }]
+                                        })}
+                                        defaultValue="Instant"
                                     >
                                         <SelectTrigger className="bg-[#13151f] border-white/10">
                                             <SelectValue placeholder="เลือกวิธีส่งมอบ" />
                                         </SelectTrigger>
                                         <SelectContent className="bg-[#1e202e] border-white/10 text-white">
+                                            <SelectItem value="Instant" className="focus:bg-white/10">ส่งทันที (Instant)</SelectItem>
                                             <SelectItem value="Coordinated" className="focus:bg-white/10">นัดหมายส่งจอง (Coordinated)</SelectItem>
-                                            <SelectItem value="Automatic" className="focus:bg-white/10">ส่งอัตโนมัติ (Automatic)</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
                                 <div className="space-y-2">
                                     <Label className="text-gray-300">ระยะเวลาส่งมอบ (Est. Time)</Label>
-                                    <Input
-                                        className="bg-[#13151f] border-white/10"
-                                        placeholder="เช่น 1 ชั่วโมง, 24 ชั่วโมง"
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setSpecs(prev => {
-                                                const filtered = prev.filter(s => s.key !== 'Estimated Time');
-                                                return val ? [...filtered, { key: 'Estimated Time', value: val }] : filtered;
-                                            })
-                                        }}
-                                    />
+                                    {specs.find(s => s.key === 'Delivery Method')?.value === 'Instant' ? (
+                                        <Input
+                                            className="bg-[#13151f] border-white/10 text-gray-500 cursor-not-allowed"
+                                            value="Instant (ทันที)"
+                                            disabled
+                                        />
+                                    ) : (
+                                        <Select
+                                            onValueChange={(val) => setSpecs(prev => {
+                                                const others = prev.filter(s => s.key !== 'Estimated Time')
+                                                return [...others, { key: 'Estimated Time', value: val }]
+                                            })}
+                                        >
+                                            <SelectTrigger className="bg-[#13151f] border-white/10">
+                                                <SelectValue placeholder="เลือกเวลาโดยประมาณ" />
+                                            </SelectTrigger>
+                                            <SelectContent className="bg-[#1e202e] border-white/10 text-white">
+                                                <SelectItem value="As soon as online" className="focus:bg-white/10">ทันทีที่ออนไลน์ (As soon as online)</SelectItem>
+                                                <SelectItem value="Within 6 hours" className="focus:bg-white/10">ภายใน 6 ชม. (Within 6 hours)</SelectItem>
+                                                <SelectItem value="Within 12 hours" className="focus:bg-white/10">ภายใน 12 ชม. (Within 12 hours)</SelectItem>
+                                                <SelectItem value="Within 24 hours" className="focus:bg-white/10">ภายใน 24 ชม. (Within 24 hours)</SelectItem>
+                                                <SelectItem value="1-3 Days" className="focus:bg-white/10">1-3 วัน (1-3 Days)</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    )}
                                 </div>
                             </div>
+
+                            {/* Secret Info Input for Instant Delivery */}
+                            {specs.find(s => s.key === 'Delivery Method')?.value === 'Instant' && (
+                                <div className="space-y-2 pt-2 animate-in slide-in-from-top-2">
+                                    <Label className="text-green-400 font-semibold flex items-center gap-2">
+                                        ข้อมูลสำหรับส่งมอบ (Instant Delivery Data)
+                                        <span className="text-xs font-normal text-gray-500">*ลูกค้าจะเห็นข้อมูลนี้ทันทีที่ชำระเงิน</span>
+                                    </Label>
+                                    <Textarea
+                                        className="bg-[#13151f] border-green-500/30 min-h-[100px] font-mono text-sm"
+                                        placeholder="ใส่รหัสบัตร, ID/Pass, หรือลิ้งค์ดาวน์โหลดที่ต้องการส่งให้ลูกค้า..."
+                                        value={secretInfo}
+                                        onChange={(e) => setSecretInfo(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         {/* Custom Specifications Builder */}
@@ -350,7 +398,7 @@ export default function SellPage() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label className="text-gray-300">จำนวนสินค้า (Stock)</Label>
+                                <Label className="text-gray-300">จำนวนสินค้า (Quantity / Stock)</Label>
                                 <Input
                                     type="number"
                                     className="bg-[#13151f] border-white/10"
@@ -360,6 +408,7 @@ export default function SellPage() {
                                     min="1"
                                     required
                                 />
+                                <p className="text-xs text-gray-500">Default: 1</p>
                             </div>
                         </div>
 

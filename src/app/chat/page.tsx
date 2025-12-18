@@ -24,6 +24,7 @@ interface Profile {
     display_name: string
     avatar_url: string
     last_seen?: string
+    is_online_hidden?: boolean
 }
 
 interface Message {
@@ -132,8 +133,8 @@ export function ChatContent() {
                 hidden_for,
                 participant1_cleared_at,
                 participant2_cleared_at,
-                participant1:profiles!participant1_id(id, display_name, avatar_url, last_seen),
-                participant2:profiles!participant2_id(id, display_name, avatar_url, last_seen)
+                participant1:profiles!participant1_id(id, display_name, avatar_url, last_seen, is_online_hidden),
+                participant2:profiles!participant2_id(id, display_name, avatar_url, last_seen, is_online_hidden)
             `)
 
         if (mode === 'admin') {
@@ -219,7 +220,7 @@ export function ChatContent() {
                     const isP1 = c.partner.id === updatedProfile.id
                     // Usually partner is nested. We need to check if this updated profile IS the partner
                     if (c.partner.id === updatedProfile.id) {
-                        return { ...c, partner: { ...c.partner, last_seen: updatedProfile.last_seen } }
+                        return { ...c, partner: { ...c.partner, last_seen: updatedProfile.last_seen, is_online_hidden: updatedProfile.is_online_hidden } }
                     }
                     return c
                 }))
@@ -227,7 +228,7 @@ export function ChatContent() {
                 // Also update singleConversation if active
                 setSingleConversation(prev => {
                     if (prev && prev.partner.id === updatedProfile.id) {
-                        return { ...prev, partner: { ...prev.partner, last_seen: updatedProfile.last_seen } }
+                        return { ...prev, partner: { ...prev.partner, last_seen: updatedProfile.last_seen, is_online_hidden: updatedProfile.is_online_hidden } }
                     }
                     return prev
                 })
@@ -557,8 +558,8 @@ export function ChatContent() {
                     last_message_preview,
                     updated_at,
                     hidden_for,
-                    participant1:profiles!participant1_id(id, display_name, avatar_url, last_seen),
-                    participant2:profiles!participant2_id(id, display_name, avatar_url, last_seen)
+                    participant1:profiles!participant1_id(id, display_name, avatar_url, last_seen, is_online_hidden),
+                    participant2:profiles!participant2_id(id, display_name, avatar_url, last_seen, is_online_hidden)
                 `)
                 .eq('id', selectedConversationId)
                 .single()
@@ -587,9 +588,11 @@ export function ChatContent() {
     }, [selectedConversationId, activeConvo, user])
 
     // ... rest of loading/fetching messages ...
-    const getPresenceStatus = (lastSeen?: string, partnerId?: string) => {
+    const getPresenceStatus = (lastSeen?: string, partnerId?: string, isHidden?: boolean) => {
         const SUPPORT_ID = '00000000-0000-0000-0000-000000000000'
         if (partnerId === SUPPORT_ID) return { text: 'Online', color: 'text-green-500' }
+
+        if (isHidden) return null
 
         if (!lastSeen) return { text: 'Offline', color: 'text-gray-500' }
         const diff = (new Date().getTime() - new Date(lastSeen).getTime()) / 1000 / 60 // mins
@@ -616,7 +619,7 @@ export function ChatContent() {
         return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
     }
 
-    const presence = activeConvo ? getPresenceStatus(activeConvo.partner.last_seen, activeConvo.partner.id) : null
+    const presence = activeConvo ? getPresenceStatus(activeConvo.partner.last_seen, activeConvo.partner.id, activeConvo.partner.is_online_hidden) : null
 
     return (
         <div className="container mx-auto py-4 md:py-6 h-[calc(100dvh-70px)] md:h-[calc(100vh-80px)] overscroll-none block">
@@ -707,10 +710,12 @@ export function ChatContent() {
                                     </Avatar>
                                     <div>
                                         <div className="font-bold text-white">{activeConvo.partner.display_name}</div>
-                                        <div className={cn("text-xs flex items-center gap-1", presence?.color)}>
-                                            {presence?.text === 'Online' && <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>}
-                                            {presence?.text}
-                                        </div>
+                                        {presence && (
+                                            <div className={cn("text-xs flex items-center gap-1", presence.color)}>
+                                                {presence.text === 'Online' && <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>}
+                                                {presence.text}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 <DropdownMenu>

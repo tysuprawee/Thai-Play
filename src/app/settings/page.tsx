@@ -11,12 +11,52 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 import { useLanguage } from '@/lib/i18n/LanguageContext'
 
+// ... imports
+import { Switch } from '@/components/ui/switch'
+import { createClient } from '@/lib/supabase/client'
+import { Lock } from 'lucide-react'
+
 export default function SettingsPage() {
     const router = useRouter()
     const { language, setLanguage, t } = useLanguage()
+    const supabase = createClient()
 
-    const handleSave = () => {
-        // language is already saved by context
+    const [isOnlineHidden, setIsOnlineHidden] = useState(false)
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        const fetchSettings = async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+                const { data } = await supabase
+                    .from('profiles')
+                    .select('is_online_hidden')
+                    .eq('id', user.id)
+                    .single()
+
+                if (data) {
+                    setIsOnlineHidden(data.is_online_hidden || false)
+                }
+            }
+            setLoading(false)
+        }
+        fetchSettings()
+    }, [])
+
+    const handleSave = async () => {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ is_online_hidden: isOnlineHidden })
+                .eq('id', user.id)
+
+            if (error) {
+                toast.error(t.common.error)
+                return
+            }
+        }
+
         toast.success(t.settings.save_success)
         router.refresh()
     }
@@ -50,19 +90,26 @@ export default function SettingsPage() {
                         </Select>
                     </div>
 
-                    {/* Future: Theme Selection */}
-                    {/* 
+                    <div className="h-px bg-white/5 my-4" />
+
+                    {/* Privacy Section */}
                     <div className="flex items-center justify-between">
                         <div className="space-y-1">
-                            <Label className="text-base">Theme</Label>
-                            <p className="text-sm text-gray-400">Dark mode is default</p>
+                            <Label className="text-base flex items-center gap-2">
+                                <Lock className="w-4 h-4 text-indigo-400" />
+                                {t.settings.privacy}
+                            </Label>
+                            <p className="text-sm text-gray-400">{t.settings.hide_online_desc}</p>
                         </div>
-                        <Switch checked={true} disabled />
-                    </div> 
-                    */}
+                        <Switch
+                            checked={isOnlineHidden}
+                            onCheckedChange={setIsOnlineHidden}
+                            disabled={loading}
+                        />
+                    </div>
 
                     <div className="pt-4 border-t border-white/5 flex justify-end">
-                        <Button onClick={handleSave} className="bg-indigo-600 hover:bg-indigo-500">
+                        <Button onClick={handleSave} className="bg-indigo-600 hover:bg-indigo-500" disabled={loading}>
                             <Save className="w-4 h-4 mr-2" />
                             {t.common.save}
                         </Button>

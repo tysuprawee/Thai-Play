@@ -46,6 +46,9 @@ export const translations = {
             language: 'ภาษา',
             language_desc: 'เลือกภาษาที่คุณต้องการใช้งาน',
             save_success: 'บันทึกการตั้งค่าเรียบร้อยแล้ว',
+            privacy: 'ความเป็นส่วนตัว',
+            hide_online: 'ซ่อนสถานะออนไลน์',
+            hide_online_desc: 'ซ่อนสถานะว่าคุณกำลังใช้งานอยู่จากผู้ใช้อื่น',
         },
         listing: {
             specifications: 'ข้อมูลจำเพาะ',
@@ -118,6 +121,9 @@ export const translations = {
             language: 'Language',
             language_desc: 'Select your preferred language',
             save_success: 'Settings saved successfully',
+            privacy: 'Privacy',
+            hide_online: 'Hide Online Status',
+            hide_online_desc: 'Hide your active status from other users',
         },
         listing: {
             specifications: 'Specifications',

@@ -57,6 +57,8 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     const [uploading, setUploading] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
+    const [secretCode, setSecretCode] = useState<string | null>(null)
+
     useEffect(() => {
         const init = async () => {
             const { data: { user } } = await supabase.auth.getUser()
@@ -80,7 +82,6 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 const pId = user.id === orderData.seller_id ? orderData.buyer_id : orderData.seller_id
 
                 // Get Request for Order Chat Conversation
-                // This calls our updated server action
                 try {
                     const convId = await getOrCreateConversation(pId, orderData.id)
                     setConversationId(convId)
@@ -104,6 +105,25 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 } catch (e) {
                     console.error('Failed to init chat', e)
                     toast.error('Could not load chat')
+                }
+
+                // Check for Instant Delivery Secret (Buyer Only)
+                const isBuyer = user.id === orderData.buyer_id
+                const isInstant = orderData.listings?.specifications && orderData.listings.specifications['Delivery Method'] === 'Instant'
+                // Status must be paid or later
+                const isPaid = ['escrowed', 'delivered', 'completed', 'disputed'].includes(orderData.status)
+
+                if (isBuyer && isInstant && isPaid) {
+                    const { data: secretData } = await supabase
+                        .from('listing_secrets')
+                        .select('content')
+                        .eq('listing_id', orderData.listing_id)
+                        .single()
+
+                    if (secretData) {
+                        setSecretCode(secretData.content)
+                        // Optional: Auto-status update logic here if we wanted to auto-deliver
+                    }
                 }
             }
             setLoading(false)
@@ -351,21 +371,57 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         {/* STATUS: Escrowed (Paid) */}
                         {order.status === 'escrowed' && (
                             <div className="space-y-3">
-                                <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl text-sm text-orange-200">
-                                    <div className="font-bold mb-2 flex items-center gap-2 text-orange-100">
-                                        <Clock className="h-4 w-4" />
-                                        {isSeller ? 'ส่งมอบสินค้า' : 'รอผู้ขายส่งของ'}
+                                {/* Instant Delivery Secret Display */}
+                                {secretCode ? (
+                                    <div className="space-y-3 animate-in fade-in zoom-in duration-300">
+                                        <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
+                                            <div className="flex items-center gap-2 mb-2 text-green-400 font-bold">
+                                                <Sparkles className="h-5 w-5" />
+                                                สินค้าจัดส่งอัตโนมัติ (Instant Delivery)
+                                            </div>
+                                            <div className="bg-[#0b0c14] p-3 rounded border border-white/10 font-mono text-sm break-all relative group">
+                                                {secretCode}
+                                                <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    className="absolute top-1 right-1 h-6 w-6 text-gray-400 hover:text-white"
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(secretCode)
+                                                        toast.success('Copied to clipboard')
+                                                    }}
+                                                >
+                                                    <Copy className="h-3 w-3" />
+                                                </Button>
+                                            </div>
+                                            <p className="text-xs text-green-400/70 mt-2">
+                                                ระบบจัดส่งข้อมูลให้คุณแล้ว กรุณาตรวจสอบและกดยืนยันรับสินค้า
+                                            </p>
+                                        </div>
+                                        {isBuyer && (
+                                            <Button className="w-full bg-green-600 hover:bg-green-500 h-12 text-base shadow-lg shadow-green-500/20" onClick={() => updateStatus('completed')}>
+                                                <CheckCircle className="mr-2 h-5 w-5" /> ได้รับสินค้าเรียบร้อย (Complete Order)
+                                            </Button>
+                                        )}
                                     </div>
-                                    <p className="text-xs opacity-90 leading-relaxed text-orange-200/80">
-                                        {isSeller
-                                            ? 'เงินบัญชีกลางแล้ว ส่งสินค้าให้ผู้ซื้อในแชท เสร็จแล้วกด "แจ้งส่งมอบ"'
-                                            : 'ผู้ขายกำลังเตรียมสินค้า...'}
-                                    </p>
-                                </div>
-                                {isSeller && (
-                                    <Button className="w-full bg-indigo-600 hover:bg-indigo-500 h-12 text-base shadow-lg shadow-indigo-500/20" onClick={() => updateStatus('delivered')}>
-                                        <Package className="mr-2 h-5 w-5" /> แจ้งส่งมอบงาน/ของ
-                                    </Button>
+                                ) : (
+                                    <>
+                                        <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl text-sm text-orange-200">
+                                            <div className="font-bold mb-2 flex items-center gap-2 text-orange-100">
+                                                <Clock className="h-4 w-4" />
+                                                {isSeller ? 'ส่งมอบสินค้า' : 'รอผู้ขายส่งของ'}
+                                            </div>
+                                            <p className="text-xs opacity-90 leading-relaxed text-orange-200/80">
+                                                {isSeller
+                                                    ? 'เงินบัญชีกลางแล้ว ส่งสินค้าให้ผู้ซื้อในแชท เสร็จแล้วกด "แจ้งส่งมอบ"'
+                                                    : 'ผู้ขายกำลังเตรียมสินค้า...'}
+                                            </p>
+                                        </div>
+                                        {isSeller && (
+                                            <Button className="w-full bg-indigo-600 hover:bg-indigo-500 h-12 text-base shadow-lg shadow-indigo-500/20" onClick={() => updateStatus('delivered')}>
+                                                <Package className="mr-2 h-5 w-5" /> แจ้งส่งมอบงาน/ของ
+                                            </Button>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         )}
@@ -373,6 +429,29 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         {/* STATUS: Delivered (Wait for Confirm) */}
                         {order.status === 'delivered' && (
                             <div className="space-y-3">
+                                {secretCode && (
+                                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 mb-2">
+                                        <div className="flex items-center gap-2 mb-2 text-green-400 font-bold">
+                                            <Sparkles className="h-5 w-5" />
+                                            สินค้าของคุณ (Your Item)
+                                        </div>
+                                        <div className="bg-[#0b0c14] p-3 rounded border border-white/10 font-mono text-sm break-all relative group">
+                                            {secretCode}
+                                            <Button
+                                                size="icon"
+                                                variant="ghost"
+                                                className="absolute top-1 right-1 h-6 w-6 text-gray-400 hover:text-white"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(secretCode)
+                                                    toast.success('Copied to clipboard')
+                                                }}
+                                            >
+                                                <Copy className="h-3 w-3" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl text-sm text-orange-200">
                                     <div className="font-bold mb-2 flex items-center gap-2 text-orange-100">
                                         <ShieldCheck className="h-4 w-4" />
@@ -399,6 +478,29 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                                     <CheckCircle className="h-8 w-8 text-green-400 mb-1" />
                                     <span>รายการเสร็จสมบูรณ์</span>
                                 </div>
+
+                                {secretCode && (
+                                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
+                                        <div className="flex items-center gap-2 mb-2 text-green-400 font-bold">
+                                            <Sparkles className="h-5 w-5" />
+                                            สินค้าของคุณ (Your Item)
+                                        </div>
+                                        <div className="bg-[#0b0c14] p-3 rounded border border-white/10 font-mono text-sm break-all relative group">
+                                            {secretCode}
+                                            <Button
+                                                size="icon"
+                                                variant="ghost"
+                                                className="absolute top-1 right-1 h-6 w-6 text-gray-400 hover:text-white"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(secretCode)
+                                                    toast.success('Copied to clipboard')
+                                                }}
+                                            >
+                                                <Copy className="h-3 w-3" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {isBuyer && !existingReview && (
                                     <div className="p-4 border border-white/5 border-dashed rounded bg-[#13151f]">
