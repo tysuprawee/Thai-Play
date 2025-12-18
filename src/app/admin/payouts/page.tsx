@@ -85,8 +85,8 @@ export default function AdminPayoutsPage() {
                     <PayoutTable
                         data={pendingPayouts}
                         processing={processing}
-                        onApprove={(id) => handleAction(id, 'completed')}
-                        onReject={(id) => handleAction(id, 'rejected')}
+                        onApprove={(id: string) => handleAction(id, 'completed')}
+                        onReject={(id: string) => handleAction(id, 'rejected')}
                         showActions={true}
                     />
                 </TabsContent>
