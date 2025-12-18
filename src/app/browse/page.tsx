@@ -33,6 +33,14 @@ async function getListings(searchParams: { [key: string]: string | string[] | un
         query = query.eq('listing_type', searchParams.type)
     }
 
+    // Instant Delivery Filter
+    if (searchParams.instant === 'true') {
+        // Query JSONB column 'specifications'
+        // Syntax for Supabase/PostgREST JSON filtering is a bit specific. 
+        // We use the arrow operator ->> to get text value
+        query = query.eq('specifications->>Delivery Method', 'Instant')
+    }
+
     query = query.order('created_at', { ascending: false })
 
     const { data, error } = await query
@@ -48,6 +56,26 @@ export default async function BrowsePage({
     const listings = await getListings(params)
     const supabase = await createClient()
     const { data: categories } = await supabase.from('categories').select('*')
+    // Re-await listings cause I might have typo'd above or logic flow
+    // Actually the function getListings is async so it waits.
+
+    // Construct URLs helper
+    const getFilterUrl = (key: string, value: string | null) => {
+        const newParams = new URLSearchParams()
+        if (params.q) newParams.set('q', params.q as string)
+        if (params.category) newParams.set('category', params.category as string)
+        if (params.type) newParams.set('type', params.type as string)
+        if (params.instant) newParams.set('instant', params.instant as string)
+
+        if (value === null) {
+            newParams.delete(key)
+        } else {
+            newParams.set(key, value)
+        }
+        return `/browse?${newParams.toString()}`
+    }
+
+    const isInstant = params.instant === 'true'
 
     return (
         <div className="container mx-auto py-8 px-4 md:px-6">
@@ -65,7 +93,28 @@ export default async function BrowsePage({
                                 placeholder="ค้นหา..."
                                 className="pl-9"
                             />
+                            {/* Preserve other params */}
+                            {params.category && <input type="hidden" name="category" value={params.category as string} />}
+                            {params.type && <input type="hidden" name="type" value={params.type as string} />}
+                            {params.instant && <input type="hidden" name="instant" value={params.instant as string} />}
                         </form>
+                    </div>
+
+                    <Separator />
+
+                    <div>
+                        <h3 className="text-lg font-semibold mb-3">การจัดส่ง (Delivery)</h3>
+                        <Link
+                            href={getFilterUrl('instant', isInstant ? null : 'true')}
+                            className="flex items-center space-x-2 cursor-pointer group"
+                        >
+                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isInstant ? 'bg-green-500 border-green-500 text-white' : 'border-gray-400 group-hover:border-green-500'}`}>
+                                {isInstant && <Search className="w-3 h-3" />}
+                                {/* Using Search icon as checkmark placeholder or just checkmark */}
+                                {isInstant && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>}
+                            </div>
+                            <span className={`${isInstant ? 'text-green-600 font-bold' : 'text-gray-600 group-hover:text-green-600'}`}>Instant Delivery (ส่งทันที)</span>
+                        </Link>
                     </div>
 
                     <Separator />
@@ -73,13 +122,13 @@ export default async function BrowsePage({
                     <div>
                         <h3 className="text-lg font-semibold mb-3">หมวดหมู่</h3>
                         <div className="space-y-2">
-                            <Link href="/browse" className={`block text-sm ${!params.category ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                            <Link href={getFilterUrl('category', null)} className={`block text-sm ${!params.category ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
                                 ทั้งหมด
                             </Link>
                             {categories?.map((cat: any) => (
                                 <Link
                                     key={cat.id}
-                                    href={`/browse?category=${cat.slug}&type=${params.type || ''}`}
+                                    href={getFilterUrl('category', cat.slug)}
                                     className={`block text-sm ${params.category === cat.slug ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}
                                 >
                                     {cat.name_th}
@@ -93,19 +142,19 @@ export default async function BrowsePage({
                     <div>
                         <h3 className="text-lg font-semibold mb-3">ประเภท</h3>
                         <div className="space-y-2">
-                            <Link href={`/browse?category=${params.category || ''}`} className={`block text-sm ${!params.type ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                            <Link href={getFilterUrl('type', null)} className={`block text-sm ${!params.type ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
                                 ทั้งหมด
                             </Link>
-                            <Link href={`/browse?category=${params.category || ''}&type=game`} className={`block text-sm ${params.type === 'game' ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                            <Link href={getFilterUrl('type', 'game')} className={`block text-sm ${params.type === 'game' ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
                                 เกม (Game)
                             </Link>
-                            <Link href={`/browse?category=${params.category || ''}&type=service`} className={`block text-sm ${params.type === 'service' ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                            <Link href={getFilterUrl('type', 'service')} className={`block text-sm ${params.type === 'service' ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
                                 บริการ (Service)
                             </Link>
-                            <Link href={`/browse?category=${params.category || ''}&type=item`} className={`block text-sm ${params.type === 'item' ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                            <Link href={getFilterUrl('type', 'item')} className={`block text-sm ${params.type === 'item' ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
                                 ไอเท็ม (Item)
                             </Link>
-                            <Link href={`/browse?category=${params.category || ''}&type=account`} className={`block text-sm ${params.type === 'account' ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                            <Link href={getFilterUrl('type', 'account')} className={`block text-sm ${params.type === 'account' ? 'font-bold text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
                                 ไอดี (Account)
                             </Link>
                         </div>
@@ -127,6 +176,8 @@ export default async function BrowsePage({
                         <span className="text-muted-foreground text-sm">พบ {listings?.length || 0} รายการ</span>
                     </div>
 
+                    {/* Active Filters Tags could go here */}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                         {listings && listings.length > 0 ? listings.map((item: any) => {
                             // Use first image if available
@@ -134,15 +185,22 @@ export default async function BrowsePage({
                                 ? item.listing_media[0].media_url
                                 : null;
 
+                            const isItemInstant = item.specifications?.['Delivery Method'] === 'Instant'
+
                             return (
                                 <Link key={item.id} href={`/listing/${item.id}`}>
-                                    <Card className="overflow-hidden hover:shadow-lg transition-shadow h-full flex flex-col">
+                                    <Card className="overflow-hidden hover:shadow-lg transition-shadow h-full flex flex-col group">
                                         <div className="aspect-video bg-gray-200 relative">
                                             {thumbnail ? (
-                                                <img src={thumbnail} alt={item.title_th} className="w-full h-full object-cover" />
+                                                <img src={thumbnail} alt={item.title_th} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                             ) : (
                                                 <div className="absolute inset-0 flex items-center justify-center text-gray-400">
                                                     No Image
+                                                </div>
+                                            )}
+                                            {isItemInstant && (
+                                                <div className="absolute top-2 left-2 bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">
+                                                    INSTANT
                                                 </div>
                                             )}
                                         </div>

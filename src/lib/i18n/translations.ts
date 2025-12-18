@@ -24,6 +24,7 @@ export const translations = {
             profile: 'โปรไฟล์',
             orders: 'รายการซื้อขาย',
             settings: 'ตั้งค่า (Language)',
+            dashboard: 'แดชบอร์ด',
             admin: 'Admin',
         },
         home: {
@@ -99,6 +100,7 @@ export const translations = {
             profile: 'Profile',
             orders: 'My Orders',
             settings: 'Settings (Language)',
+            dashboard: 'Dashboard',
             admin: 'Admin Panel',
         },
         home: {

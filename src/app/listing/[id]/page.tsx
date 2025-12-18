@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ListingDetails } from '@/components/listing/ListingDetails'
+import { ViewIncrementer } from '@/components/listing/ViewIncrementer'
 
 export default async function ListingPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params
@@ -42,19 +43,22 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
     const displayResponse = isOfficialStore ? '98%' : '100%'
 
     return (
-        <ListingDetails
-            listing={listing}
-            specifications={specifications}
-            tags={tags}
-            reviews={reviews}
-            stats={{
-                salesCount: salesCount || 0,
-                isOfficialStore,
-                displaySales,
-                displayRating,
-                displayReviewCount,
-                displayResponse
-            }}
-        />
+        <>
+            <ListingDetails
+                listing={listing}
+                specifications={specifications}
+                tags={tags}
+                reviews={reviews}
+                stats={{
+                    salesCount: salesCount || 0,
+                    isOfficialStore,
+                    displaySales,
+                    displayRating,
+                    displayReviewCount,
+                    displayResponse
+                }}
+            />
+            <ViewIncrementer id={listing.id} />
+        </>
     )
 }

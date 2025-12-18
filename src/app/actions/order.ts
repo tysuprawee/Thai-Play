@@ -13,13 +13,25 @@ export async function createOrder(listingId: string, paymentMethod: string) {
     // 2. Get Listing & Verify Stock
     const { data: listing, error: listingError } = await supabase
         .from('listings')
-        .select('*')
+        .select('*, profiles!seller_id(id)') // Using !seller_id to be explicit if needed, or just relying on existing select *
         .eq('id', listingId)
         .single()
 
     if (listingError || !listing) throw new Error('Listing not found')
     if (listing.stock <= 0) throw new Error('Out of stock')
     if (listing.seller_id === user.id) throw new Error('Cannot buy your own listing')
+
+    // 2.1 Fetch Category Fee
+    const { data: category } = await supabase
+        .from('categories')
+        .select('fee_percent')
+        .eq('id', listing.category_id)
+        .single()
+
+    const feePercent = category?.fee_percent || 0
+    const price = Number(listing.price_min)
+    const feeAmount = price * (feePercent / 100)
+    const netAmount = price - feeAmount
 
     // 3. Create Order
     // Status starts as 'pending_payment' or 'paid' depending on mock
@@ -35,10 +47,10 @@ export async function createOrder(listingId: string, paymentMethod: string) {
             buyer_id: user.id,
             seller_id: listing.seller_id,
             listing_id: listing.id,
-            amount: listing.price_min,
-            net_amount: listing.price_min, // Fee logic to be added later
-            status: 'pending_payment', // Start as pending payment
-            // payment_method: paymentMethod // Column missing in schema, ignoring for now
+            amount: price,
+            fee_amount: feeAmount,
+            net_amount: netAmount,
+            status: 'pending_payment',
         })
         .select()
         .single()

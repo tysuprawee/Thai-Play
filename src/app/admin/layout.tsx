@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { LayoutDashboard, Users, Gavel, FileText, Settings, LogOut, Loader2, Flag, AlertTriangle, Inbox } from 'lucide-react'
+import { LayoutDashboard, Users, Gavel, FileText, Settings, LogOut, Loader2, Flag, AlertTriangle, Inbox, Wallet } from 'lucide-react'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname()
@@ -55,6 +55,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { name: 'จัดการผู้ขาย', href: '/admin/sellers', icon: Users },
         { name: 'ข้อพิพาท', href: '/admin/disputes', icon: Gavel },
         { name: 'คำร้องขอ', href: '/admin/requests', icon: Flag }, // Changed from Reports icon for now or use suitable one
+        { name: 'อนุมัติการถอนเงิน', href: '/admin/payouts', icon: Wallet },
         { name: 'รายงานผู้ใช้', href: '/admin/reports', icon: AlertTriangle }, // Flag is better for reports usually but using AlertTriangle for reports/flag swap if needed
         { name: 'ตั้งค่าค่าธรรมเนียม', href: '/admin/fees', icon: Settings },
     ]

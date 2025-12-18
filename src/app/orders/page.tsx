@@ -145,7 +145,7 @@ export default function OrdersPage() {
     if (loading) return <div className="p-8 text-center text-white">Loading...</div>
 
     return (
-        <div className="container py-8 px-4 md:px-6">
+        <div className="container mx-auto max-w-5xl py-8 px-4 md:px-6">
             <h1 className="text-2xl font-bold mb-6 text-white">รายการคำสั่งซื้อของฉัน</h1>
 
             <Tabs defaultValue="buying" className="w-full">
