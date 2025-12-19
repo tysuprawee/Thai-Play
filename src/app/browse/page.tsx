@@ -7,6 +7,8 @@ import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/server'
 import { formatPrice } from '@/lib/utils'
 import { Search } from 'lucide-react'
+import { PriceRangeFilter } from '@/app/browse/components/PriceRangeFilter'
+import { ListingSorter } from '@/app/browse/components/ListingSorter'
 
 // Helper to construct query
 async function getListings(searchParams: { [key: string]: string | string[] | undefined }) {
@@ -35,13 +37,34 @@ async function getListings(searchParams: { [key: string]: string | string[] | un
 
     // Instant Delivery Filter
     if (searchParams.instant === 'true') {
-        // Query JSONB column 'specifications'
-        // Syntax for Supabase/PostgREST JSON filtering is a bit specific. 
-        // We use the arrow operator ->> to get text value
         query = query.eq('specifications->>Delivery Method', 'Instant')
     }
 
-    query = query.order('created_at', { ascending: false })
+    // Price Range Filter
+    if (searchParams.min) {
+        query = query.gte('price_min', searchParams.min)
+    }
+    if (searchParams.max) {
+        query = query.lte('price_min', searchParams.max)
+    }
+
+    // Sorting
+    const sort = searchParams.sort as string
+    switch (sort) {
+        case 'price_asc':
+            query = query.order('price_min', { ascending: true })
+            break
+        case 'price_desc':
+            query = query.order('price_min', { ascending: false })
+            break
+        case 'popular':
+            query = query.order('views', { ascending: false })
+            break
+        case 'relevance':
+        default:
+            query = query.order('created_at', { ascending: false })
+            break
+    }
 
     const { data, error } = await query
     return data
@@ -56,8 +79,6 @@ export default async function BrowsePage({
     const listings = await getListings(params)
     const supabase = await createClient()
     const { data: categories } = await supabase.from('categories').select('*')
-    // Re-await listings cause I might have typo'd above or logic flow
-    // Actually the function getListings is async so it waits.
 
     // Construct URLs helper
     const getFilterUrl = (key: string, value: string | null) => {
@@ -66,6 +87,10 @@ export default async function BrowsePage({
         if (params.category) newParams.set('category', params.category as string)
         if (params.type) newParams.set('type', params.type as string)
         if (params.instant) newParams.set('instant', params.instant as string)
+        if (params.sort) newParams.set('sort', params.sort as string)
+        // Keep price range too? Yes usually
+        if (params.min) newParams.set('min', params.min as string)
+        if (params.max) newParams.set('max', params.max as string)
 
         if (value === null) {
             newParams.delete(key)
@@ -97,8 +122,14 @@ export default async function BrowsePage({
                             {params.category && <input type="hidden" name="category" value={params.category as string} />}
                             {params.type && <input type="hidden" name="type" value={params.type as string} />}
                             {params.instant && <input type="hidden" name="instant" value={params.instant as string} />}
+                            {params.sort && <input type="hidden" name="sort" value={params.sort as string} />}
                         </form>
                     </div>
+
+                    <Separator />
+
+                    {/* Price Range */}
+                    <PriceRangeFilter />
 
                     <Separator />
 
@@ -110,7 +141,6 @@ export default async function BrowsePage({
                         >
                             <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isInstant ? 'bg-green-500 border-green-500 text-white' : 'border-gray-400 group-hover:border-green-500'}`}>
                                 {isInstant && <Search className="w-3 h-3" />}
-                                {/* Using Search icon as checkmark placeholder or just checkmark */}
                                 {isInstant && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>}
                             </div>
                             <span className={`${isInstant ? 'text-green-600 font-bold' : 'text-gray-600 group-hover:text-green-600'}`}>Instant Delivery (ส่งทันที)</span>
@@ -167,13 +197,18 @@ export default async function BrowsePage({
 
                 {/* Listings Grid */}
                 <div className="flex-1">
-                    <div className="mb-6 flex justify-between items-center">
-                        <h1 className="text-2xl font-bold">
-                            {params.category ?
-                                categories?.find((c: any) => c.slug === params.category)?.name_th || params.category
-                                : 'รายการทั้งหมด'}
-                        </h1>
-                        <span className="text-muted-foreground text-sm">พบ {listings?.length || 0} รายการ</span>
+                    <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                            <h1 className="text-2xl font-bold">
+                                {params.category ?
+                                    categories?.find((c: any) => c.slug === params.category)?.name_th || params.category
+                                    : 'รายการทั้งหมด'}
+                            </h1>
+                            <span className="text-muted-foreground text-sm">พบ {listings?.length || 0} รายการ</span>
+                        </div>
+
+                        {/* Sorting Dropdown */}
+                        <ListingSorter />
                     </div>
 
                     {/* Active Filters Tags could go here */}

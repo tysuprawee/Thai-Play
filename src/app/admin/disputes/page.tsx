@@ -60,6 +60,7 @@ export default function AdminDisputesPage() {
                         <TableRow className="border-white/5 hover:bg-white/5">
                             <TableHead className="text-gray-400">Order ID</TableHead>
                             <TableHead className="text-gray-400">คู่กรณี</TableHead>
+                            <TableHead className="text-gray-400">เหตุผล (Reason)</TableHead>
                             <TableHead className="text-gray-400">จำนวนเงิน</TableHead>
                             <TableHead className="text-gray-400 text-right">การตัดสิน</TableHead>
                         </TableRow>
@@ -88,6 +89,25 @@ export default function AdminDisputesPage() {
                                         <ArrowRight className="w-3 h-3 text-gray-600" />
                                         <span className="text-green-400">{order.seller?.display_name}</span>
                                     </div>
+                                </TableCell>
+                                <TableCell>
+                                    {(() => {
+                                        // Parse "[Category] Reason" format
+                                        const match = order.dispute_reason?.match(/^\[(.*?)\] (.*)$/)
+                                        if (match) {
+                                            return (
+                                                <div className="space-y-1">
+                                                    <Badge variant="outline" className="text-xs border-orange-500/50 text-orange-400">
+                                                        {match[1]}
+                                                    </Badge>
+                                                    <p className="text-xs text-gray-400 max-w-[200px] truncate" title={match[2]}>
+                                                        {match[2]}
+                                                    </p>
+                                                </div>
+                                            )
+                                        }
+                                        return <span className="text-xs text-gray-400">{order.dispute_reason || '-'}</span>
+                                    })()}
                                 </TableCell>
                                 <TableCell className="text-white font-medium">
                                     ฿{order.amount}

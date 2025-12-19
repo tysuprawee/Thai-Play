@@ -29,6 +29,13 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params)
@@ -53,6 +60,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     const [initialScrollDone, setInitialScrollDone] = useState(false)
     const [pendingStatus, setPendingStatus] = useState<string | null>(null)
     const [disputeOpen, setDisputeOpen] = useState(false)
+    const [disputeCategory, setDisputeCategory] = useState('')
     const [disputeReason, setDisputeReason] = useState('')
 
     const [uploading, setUploading] = useState(false)
@@ -62,6 +70,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     const [secretData, setSecretData] = useState<any>(null)
     const [isSecretRevealed, setIsSecretRevealed] = useState(false)
     const [revealDialogOpen, setRevealDialogOpen] = useState(false)
+    const [showReviewModal, setShowReviewModal] = useState(false) // Auto-prompt review
 
     // Typing Indicators
     const [isPartnerTyping, setIsPartnerTyping] = useState(false)
@@ -132,6 +141,19 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         setSecretCode(sData.content)
                         setSecretData(sData)
                         setIsSecretRevealed(true)
+                    }
+                } else if (user.id === orderData.seller_id && isInstant) {
+                    // Seller: Fetch secret directly (Auto-reveal for owner)
+                    const { data: sData, error } = await supabase
+                        .from('listing_secrets')
+                        .select('*')
+                        .eq('listing_id', orderData.listing_id)
+                        .maybeSingle()
+
+                    if (sData) {
+                        setSecretCode(sData.content)
+                        setSecretData(sData)
+                        setIsSecretRevealed(true) // Show content, no reveal button needed
                     }
                 }
             }
@@ -337,12 +359,17 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     }
 
     const submitDispute = async () => {
-        if (!disputeReason.trim()) return
+        if (!disputeCategory) return toast.error('Please select a reason')
+        if (!disputeReason.trim()) return toast.error('Please provide details')
+
+        const finalReason = `[${disputeCategory}] ${disputeReason}`
+
         try {
-            await disputeOrder(id, disputeReason)
+            await disputeOrder(id, finalReason)
             toast.success('Issue reported')
             setDisputeOpen(false)
             setDisputeReason('')
+            setDisputeCategory('')
         } catch (e) {
             toast.error('Failed to report issue')
         }
@@ -578,7 +605,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                                 )}
 
                                 {/* Common: Review / Dispute for Completed Orders */}
-                                {order.status === 'completed' && (
+                                {order.status === 'completed' && (!isInstant || isSecretRevealed) && (
                                     <div className="space-y-4 pt-2">
                                         {isBuyer && !existingReview && (
                                             <div className="p-4 border border-white/5 border-dashed rounded bg-[#13151f]">
@@ -868,8 +895,30 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         <AlertDialogCancel className="bg-transparent border-white/10 text-white hover:bg-white/5">Cancel</AlertDialogCancel>
                         <AlertDialogAction
                             className="bg-orange-500 hover:bg-orange-600 text-white"
-                            onClick={() => {
-                                setIsSecretRevealed(true)
+                            onClick={async (e) => {
+                                e.preventDefault() // Prevent auto-close if we want to wait, but AlertDialog action usually closes. 
+                                // Better to run logic then close? Or close then run?
+                                // Let's run logic.
+                                try {
+                                    const { data: sData, error } = await supabase.rpc('reveal_secret', { order_uuid: id })
+                                    if (error) throw error
+
+                                    if (sData) {
+                                        setSecretCode(sData.content)
+                                        setSecretData(sData)
+                                        setIsSecretRevealed(true)
+                                        toast.success('Your secret has been revealed!')
+                                        // Auto-Prompt Review after 2.5 seconds
+                                        setTimeout(() => {
+                                            if (!existingReview) {
+                                                setShowReviewModal(true)
+                                            }
+                                        }, 2500)
+                                    }
+                                } catch (error) {
+                                    console.error('Reveal error', error)
+                                    toast.error('Failed to reveal secret')
+                                }
                                 setRevealDialogOpen(false)
                             }}
                         >
@@ -888,17 +937,77 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
-                        <Input
-                            value={disputeReason}
-                            onChange={e => setDisputeReason(e.target.value)}
-                            placeholder="รายละเอียดปัญหา..."
-                            className="bg-[#0b0c14] border-white/10 text-white"
-                        />
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-300">หัวข้อปัญหา (Reason)</label>
+                            <Select value={disputeCategory} onValueChange={setDisputeCategory}>
+                                <SelectTrigger className="bg-[#0b0c14] border-white/10 text-white">
+                                    <SelectValue placeholder="เลือกหัวข้อปัญหา..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="Item Not Working">สินค้าใช้งานไม่ได้ (Item Not Working)</SelectItem>
+                                    <SelectItem value="Invalid Credentials">รหัสผ่านผิด (Invalid Credentials)</SelectItem>
+                                    <SelectItem value="Item Not As Described">สินค้าไม่ตรงปก (Item Not As Described)</SelectItem>
+                                    <SelectItem value="Other">อื่นๆ (Other)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-300">รายละเอียดเพิ่มเติม (Details)</label>
+                            <Input
+                                value={disputeReason}
+                                onChange={e => setDisputeReason(e.target.value)}
+                                placeholder="อธิบายปัญหาที่พบ..."
+                                className="bg-[#0b0c14] border-white/10 text-white"
+                            />
+                        </div>
+
                         <DialogFooter>
                             <Button variant="ghost" onClick={() => setDisputeOpen(false)}>ยกเลิก</Button>
-                            <Button variant="destructive" onClick={submitDispute} disabled={!disputeReason.trim()}>ส่งรายงาน</Button>
+                            <Button variant="destructive" onClick={submitDispute} disabled={!disputeCategory || !disputeReason.trim()}>ส่งรายงาน</Button>
                         </DialogFooter>
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Auto-Prompt Review Dialog */}
+            <Dialog open={showReviewModal} onOpenChange={setShowReviewModal}>
+                <DialogContent className="bg-[#1e202e] border-white/10 text-white sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-center text-xl flex flex-col items-center gap-2">
+                            <Sparkles className="h-8 w-8 text-yellow-500 fill-yellow-500/20" />
+                            How was your experience?
+                        </DialogTitle>
+                        <DialogDescription className="text-center text-gray-400">
+                            You just received your item! Please take a moment to rate the seller.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col items-center py-4 gap-4">
+                        <div className="flex gap-2">
+                            {[1, 2, 3, 4, 5].map(s => (
+                                <button key={s} type="button" onClick={() => setRating(s)} className="transition-transform hover:scale-110 focus:outline-none">
+                                    <Star className={`h-8 w-8 ${s <= rating ? 'fill-yellow-500 text-yellow-500' : 'text-gray-600'}`} />
+                                </button>
+                            ))}
+                        </div>
+                        <Input
+                            placeholder="Write a review (optional)..."
+                            className="bg-[#0b0c14] border-white/10 text-white w-full"
+                            value={reviewComment}
+                            onChange={e => setReviewComment(e.target.value)}
+                        />
+                    </div>
+                    <DialogFooter className="sm:justify-center gap-2">
+                        <Button variant="ghost" onClick={() => setShowReviewModal(false)} className="text-gray-500 hover:text-white">
+                            Maybe Later
+                        </Button>
+                        <Button className="bg-indigo-600 hover:bg-indigo-500 min-w-[120px]" onClick={(e) => {
+                            submitReview(e);
+                            setShowReviewModal(false);
+                        }}>
+                            Submit Review
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 
