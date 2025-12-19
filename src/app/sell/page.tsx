@@ -40,6 +40,10 @@ export default function SellPage() {
 
     // Secret Info for Instant Delivery
     const [secretInfo, setSecretInfo] = useState('')
+    const [instantMediaType, setInstantMediaType] = useState<'code' | 'account'>('code')
+    const [accountUser, setAccountUser] = useState('')
+    const [accountPass, setAccountPass] = useState('')
+    const [accountNote, setAccountNote] = useState('')
 
     // Tags State
     const [tagsInput, setTagsInput] = useState('')
@@ -155,12 +159,38 @@ export default function SellPage() {
 
             // 3. Save Secret Info if Instant Delivery
             const deliveryMethod = specs.find(s => s.key === 'Delivery Method')?.value
-            if (deliveryMethod === 'Instant' && secretInfo.trim()) {
-                const { error: secretError } = await supabase.from('listing_secrets').insert({
-                    listing_id: newListingId,
-                    content: secretInfo
-                })
-                if (secretError) console.error('Failed to save secret:', secretError)
+            if (deliveryMethod === 'Instant') {
+                let finalSecretContent = ''
+
+                if (instantMediaType === 'code' && secretInfo.trim()) {
+                    finalSecretContent = secretInfo
+                } else if (instantMediaType === 'account') {
+                    if (!accountUser || !accountPass) {
+                        alert('กรุณากรอก Username และ Password')
+                        setLoading(false)
+                        return
+                    }
+                    finalSecretContent = `Username: ${accountUser}\nPassword: ${accountPass}\nNote: ${accountNote || '-'}`
+                }
+
+                if (finalSecretContent) {
+                    const secretPayload: any = {
+                        listing_id: newListingId,
+                        content: finalSecretContent,
+                        secret_type: instantMediaType
+                    }
+
+                    if (instantMediaType === 'account') {
+                        secretPayload.credential_data = {
+                            username: accountUser,
+                            password: accountPass,
+                            note: accountNote
+                        }
+                    }
+
+                    const { error: secretError } = await supabase.from('listing_secrets').insert(secretPayload)
+                    if (secretError) console.error('Failed to save secret:', secretError)
+                }
             }
 
             router.push(`/listing/${newListingId}`)
@@ -277,18 +307,78 @@ export default function SellPage() {
 
                             {/* Secret Info Input for Instant Delivery */}
                             {specs.find(s => s.key === 'Delivery Method')?.value === 'Instant' && (
-                                <div className="space-y-2 pt-2 animate-in slide-in-from-top-2">
-                                    <Label className="text-green-400 font-semibold flex items-center gap-2">
-                                        ข้อมูลสำหรับส่งมอบ (Instant Delivery Data)
-                                        <span className="text-xs font-normal text-gray-500">*ลูกค้าจะเห็นข้อมูลนี้ทันทีที่ชำระเงิน</span>
-                                    </Label>
-                                    <Textarea
-                                        className="bg-[#13151f] border-green-500/30 min-h-[100px] font-mono text-sm"
-                                        placeholder="ใส่รหัสบัตร, ID/Pass, หรือลิ้งค์ดาวน์โหลดที่ต้องการส่งให้ลูกค้า..."
-                                        value={secretInfo}
-                                        onChange={(e) => setSecretInfo(e.target.value)}
-                                        required
-                                    />
+                                <div className="space-y-4 pt-4 border-t border-white/5 animate-in slide-in-from-top-2">
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-green-400 font-semibold flex items-center gap-2">
+                                            ข้อมูลสำหรับส่งมอบ (Instant Delivery Data)
+                                            <span className="text-xs font-normal text-gray-500">*ลูกค้าจะเห็นข้อมูลนี้ทันทีที่ชำระเงิน</span>
+                                        </Label>
+                                        <div className="flex bg-[#13151f] p-1 rounded-lg border border-white/10">
+                                            <button
+                                                type="button"
+                                                onClick={() => setInstantMediaType('code')}
+                                                className={`px-3 py-1 text-xs rounded-md transition-all ${instantMediaType === 'code' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                                            >
+                                                Code / Key
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setInstantMediaType('account')}
+                                                className={`px-3 py-1 text-xs rounded-md transition-all ${instantMediaType === 'account' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                                            >
+                                                Account ID
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {instantMediaType === 'code' ? (
+                                        <div className="space-y-2">
+                                            <Textarea
+                                                placeholder="ใส่รหัสบัตร หรือ Code ที่ต้องการจะส่งให้ลูกค้า..."
+                                                className="bg-[#13151f] border-white/10 min-h-[120px] font-mono text-sm"
+                                                value={secretInfo}
+                                                onChange={(e) => setSecretInfo(e.target.value)}
+                                                required={instantMediaType === 'code'}
+                                            />
+                                            <p className="text-xs text-gray-500">
+                                                *สำหรับ Code/Key หลายชุด ควรลงขายทีละชิ้น หรือระบุในรายละเอียด
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid gap-4 p-4 bg-[#13151f] rounded-xl border border-white/10">
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <Label className="text-gray-300 text-xs">ID / Username / Email</Label>
+                                                    <Input
+                                                        className="bg-[#0b0c14] border-white/10"
+                                                        placeholder="Username / Email"
+                                                        value={accountUser}
+                                                        onChange={e => setAccountUser(e.target.value)}
+                                                        required={instantMediaType === 'account'}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label className="text-gray-300 text-xs">Password</Label>
+                                                    <Input
+                                                        className="bg-[#0b0c14] border-white/10"
+                                                        placeholder="Password"
+                                                        value={accountPass}
+                                                        onChange={e => setAccountPass(e.target.value)}
+                                                        required={instantMediaType === 'account'}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-gray-300 text-xs">ข้อมูลเพิ่มเติม (Optional)</Label>
+                                                <Input
+                                                    className="bg-[#0b0c14] border-white/10"
+                                                    placeholder="เช่น Email Domain, 2FA Backup Code, หรือคำแนะนำการlogin"
+                                                    value={accountNote}
+                                                    onChange={e => setAccountNote(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ReportUserDialog } from '@/components/chat/ReportUserDialog'
 import { getOrCreateConversation, deleteConversation, sendMessage, sendSupportReply } from '@/app/actions/chat'
+import { ChatGuard } from '@/lib/security/ChatGuard'
 
 interface Profile {
     id: string
@@ -455,6 +456,13 @@ export function ChatContent() {
         if ((!newMessage.trim() && !imageFile) || !selectedConversationId || !user) return
 
         const content = newMessage.trim()
+
+        // 🛡️ Trust & Safety Guard
+        if (ChatGuard.isSuspect(content)) {
+            toast.warning("Safety Warning: Please keep transactions on ThaiPlay for your protection. Sharing external contacts is against our policy.")
+            return
+        }
+
         const fileToSend = imageFile
 
         // Define Sender ID for Optimistic UI

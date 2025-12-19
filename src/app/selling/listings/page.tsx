@@ -46,6 +46,28 @@ export default function MyListingsPage() {
         }
     }
 
+    const handleQuickStockEdit = async (item: any) => {
+        const newStockStr = prompt(`แก้ไขจำนวนสินค้าสำหรับ "${item.title_th}"\nใส่จำนวนใหม่:`, item.stock.toString())
+        if (newStockStr === null) return // Cancelled
+
+        const newStock = parseInt(newStockStr)
+        if (isNaN(newStock) || newStock < 0) {
+            alert('กรุณาใส่จำนวนที่ถูกต้อง')
+            return
+        }
+
+        const { error } = await supabase
+            .from('listings')
+            .update({ stock: newStock })
+            .eq('id', item.id)
+
+        if (error) {
+            alert('อัพเดทไม่สำเร็จ: ' + error.message)
+        } else {
+            setListings(listings.map(l => l.id === item.id ? { ...l, stock: newStock } : l))
+        }
+    }
+
     if (loading) return <div className="p-10 text-center text-white">Loading...</div>
 
     return (
@@ -99,8 +121,8 @@ export default function MyListingsPage() {
                                             {item.title_th}
                                         </h3>
                                         <div className={`px-2 py-0.5 rounded text-xs font-medium capitalize border ${item.status === 'active'
-                                                ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                                                : 'bg-gray-500/10 text-gray-400 border-gray-500/20'
+                                            ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                            : 'bg-gray-500/10 text-gray-400 border-gray-500/20'
                                             }`}>
                                             {item.status}
                                         </div>
@@ -112,6 +134,15 @@ export default function MyListingsPage() {
                                     <div className="flex items-center">
                                         <div className="w-2 h-2 rounded-full bg-green-500 mr-2"></div>
                                         Active
+                                    </div>
+                                    <div>•</div>
+                                    <div className="flex items-center gap-1 group/stock cursor-pointer" onClick={() => handleQuickStockEdit(item)} title="Click to Edit Stock">
+                                        <Package className="w-3 h-3" />
+                                        <span>Stock:</span>
+                                        <span className={item.stock > 0 ? "text-white font-medium" : "text-red-500 font-bold"}>
+                                            {item.stock}
+                                        </span>
+                                        <Pencil className="w-3 h-3 opacity-0 group-hover/stock:opacity-100 transition-opacity text-indigo-400" />
                                     </div>
                                     <div>•</div>
                                     <div>ลงเมื่อ: {new Date(item.created_at).toLocaleDateString('th-TH')}</div>

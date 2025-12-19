@@ -16,6 +16,7 @@ import { confirmPayment, confirmDelivery, confirmReceipt, disputeOrder, mockPaym
 import { submitReview as submitReviewAction } from '@/app/actions/review'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { ChatGuard } from '@/lib/security/ChatGuard'
 import {
     AlertDialog,
     AlertDialogAction,
@@ -58,6 +59,9 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const [secretCode, setSecretCode] = useState<string | null>(null)
+    const [secretData, setSecretData] = useState<any>(null)
+    const [isSecretRevealed, setIsSecretRevealed] = useState(false)
+    const [revealDialogOpen, setRevealDialogOpen] = useState(false)
 
     // Typing Indicators
     const [isPartnerTyping, setIsPartnerTyping] = useState(false)
@@ -118,16 +122,16 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 // Status must be paid or later
                 const isPaid = ['escrowed', 'delivered', 'completed', 'disputed'].includes(orderData.status)
 
-                if (isBuyer && isInstant && isPaid) {
-                    const { data: secretData } = await supabase
-                        .from('listing_secrets')
-                        .select('content')
-                        .eq('listing_id', orderData.listing_id)
-                        .single()
+                if (isBuyer && isInstant && isPaid && orderData.revealed_at) {
+                    // Only fetch if ALREADY revealed (Seal Broken)
+                    const { data: sData, error } = await supabase.rpc('reveal_secret', { order_uuid: orderData.id })
 
-                    if (secretData) {
-                        setSecretCode(secretData.content)
-                        // Optional: Auto-status update logic here if we wanted to auto-deliver
+                    if (error) {
+                        console.error('Auto-load revealed secret error:', error)
+                    } else if (sData) {
+                        setSecretCode(sData.content)
+                        setSecretData(sData)
+                        setIsSecretRevealed(true)
                     }
                 }
             }
@@ -195,17 +199,11 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 const isBuyer = currentUser.id === order.buyer_id
                 const isInstant = order.listings?.specifications?.['Delivery Method'] === 'Instant'
 
-                if (isBuyer && isInstant && (newStatus === 'delivered' || newStatus === 'completed') && !secretCode) {
-                    const { data: secretData } = await supabase
-                        .from('listing_secrets')
-                        .select('content')
-                        .eq('listing_id', order.listing_id)
-                        .single()
-
-                    if (secretData) {
-                        setSecretCode(secretData.content)
-                        toast.success('Received Instant Delivery!')
-                    }
+                if (isBuyer && isInstant && (newStatus === 'delivered' || newStatus === 'completed')) {
+                    // Do NOT auto-reveal. 
+                    // Just let the UI update to show the "Reveal" button (via !isSecretRevealed default).
+                    // Logic: The user sees "Delivered" -> "Click to Reveal" -> User Clicks -> RPC -> Reveal.
+                    toast.success('Order Delivered! Click to reveal your item.')
                 }
             })
             .subscribe()
@@ -234,6 +232,12 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!newMessage.trim() || !currentUser || !conversationId) return
+
+        // 🛡️ Trust & Safety Guard
+        if (ChatGuard.isSuspect(newMessage.trim())) {
+            toast.warning("Safety Warning: Please keep transactions on ThaiPlay for your protection.")
+            return
+        }
 
         try {
             await sendMessage(conversationId, newMessage.trim(), 'text')
@@ -361,6 +365,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
 
     const isBuyer = currentUser?.id === order.buyer_id
     const isSeller = currentUser?.id === order.seller_id
+    const isInstant = order.listings?.specifications?.['Delivery Method'] === 'Instant'
 
     return (
         <div className="container mx-auto py-6 px-4 md:px-6 h-[calc(100vh-4rem)] flex flex-col md:flex-row gap-6">
@@ -399,185 +404,230 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                             </div>
                         )}
 
-                        {/* STATUS: Escrowed (Paid) */}
-                        {order.status === 'escrowed' && (
-                            <div className="space-y-3">
-                                {/* Instant Delivery Secret Display */}
-                                {secretCode ? (
+                        {/* STATUS: Paid / Processing / Completed */}
+                        {['escrowed', 'delivered', 'completed', 'disputed'].includes(order.status) && (
+                            <div className="space-y-4">
+
+                                {/* 1. INSTANT DELIVERY LOGIC */}
+                                {isInstant ? (
                                     <div className="space-y-3 animate-in fade-in zoom-in duration-300">
+
+                                        {/* Header */}
                                         <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
                                             <div className="flex items-center gap-2 mb-2 text-green-400 font-bold">
                                                 <Sparkles className="h-5 w-5" />
                                                 สินค้าจัดส่งอัตโนมัติ (Instant Delivery)
                                             </div>
-                                            <div className="bg-[#0b0c14] p-3 rounded border border-white/10 font-mono text-sm break-all relative group">
-                                                {secretCode}
-                                                <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    className="absolute top-1 right-1 h-6 w-6 text-gray-400 hover:text-white"
-                                                    onClick={() => {
-                                                        navigator.clipboard.writeText(secretCode)
-                                                        toast.success('Copied to clipboard')
-                                                    }}
-                                                >
-                                                    <Copy className="h-3 w-3" />
-                                                </Button>
-                                            </div>
-                                            <p className="text-xs text-green-400/70 mt-2">
-                                                ระบบจัดส่งข้อมูลให้คุณแล้ว กรุณาตรวจสอบและกดยืนยันรับสินค้า
-                                            </p>
+
+                                            {/* Secret Content or Reveal Trigger */}
+                                            {!isSecretRevealed && !secretCode ? (
+                                                <div className="bg-[#0b0c14] p-6 rounded border border-white/10 text-center space-y-3">
+                                                    <div className="opacity-50 blur-sm select-none text-gray-400">
+                                                        XXXXXXXXXXXXXXXXXXXX
+                                                    </div>
+                                                    <Button
+                                                        variant="secondary"
+                                                        className="w-full bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/50"
+                                                        onClick={() => setRevealDialogOpen(true)}
+                                                    >
+                                                        <ShieldCheck className="mr-2 h-4 w-4" />
+                                                        กดเพื่อดูสินค้า (Click to Reveal)
+                                                    </Button>
+                                                    <p className="text-[10px] text-gray-500">
+                                                        *เมื่อกดดูแล้วจะไม่สามารถขอคืนเงินได้ (Non-refundable after reveal)
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                // REVEALED CONTENT
+                                                <div className="bg-[#0b0c14] rounded border border-white/10 overflow-hidden">
+                                                    {secretData?.secret_type === 'account' && secretData.credential_data ? (
+                                                        <div className="p-4 flex flex-col gap-4">
+                                                            {/* Username Block */}
+                                                            <div className="bg-[#13151f] rounded-lg border border-white/10 p-3 shadow-sm">
+                                                                <label className="text-xs text-indigo-400 uppercase tracking-wider font-bold mb-2 block flex items-center gap-2">
+                                                                    <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                                                                    Username / ID
+                                                                </label>
+                                                                <div className="flex items-center gap-3">
+                                                                    <code className="text-white font-mono text-base flex-1 break-all bg-black/30 p-2 rounded border border-white/5">
+                                                                        {secretData.credential_data.username}
+                                                                    </code>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="secondary"
+                                                                        className="shrink-0 h-10 px-4 hover:bg-indigo-500/20 hover:text-indigo-300"
+                                                                        onClick={() => { navigator.clipboard.writeText(secretData.credential_data.username); toast.success('Copied Username') }}
+                                                                    >
+                                                                        <Copy className="h-4 w-4 mr-2" /> Copy
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Password Block */}
+                                                            <div className="bg-[#13151f] rounded-lg border border-white/10 p-3 shadow-sm">
+                                                                <label className="text-xs text-green-400 uppercase tracking-wider font-bold mb-2 block flex items-center gap-2">
+                                                                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                                                    Password
+                                                                </label>
+                                                                <div className="flex items-center gap-3">
+                                                                    <code className="text-white font-mono text-base flex-1 break-all bg-black/30 p-2 rounded border border-white/5">
+                                                                        {secretData.credential_data.password}
+                                                                    </code>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="secondary"
+                                                                        className="shrink-0 h-10 px-4 hover:bg-green-500/20 hover:text-green-300"
+                                                                        onClick={() => { navigator.clipboard.writeText(secretData.credential_data.password); toast.success('Copied Password') }}
+                                                                    >
+                                                                        <Copy className="h-4 w-4 mr-2" /> Copy
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Note Block */}
+                                                            {secretData.credential_data.note && (
+                                                                <div className="bg-[#13151f]/50 rounded-lg border border-white/5 p-3">
+                                                                    <label className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-1 block">Note</label>
+                                                                    <p className="text-sm text-gray-400 whitespace-pre-wrap">{secretData.credential_data.note}</p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="p-3 font-mono text-sm break-all relative group whitespace-pre-wrap">
+                                                            {secretCode}
+                                                            <Button
+                                                                size="icon"
+                                                                variant="ghost"
+                                                                className="absolute top-1 right-1 h-6 w-6 text-gray-400 hover:text-white"
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(secretCode || '')
+                                                                    toast.success('Copied to clipboard')
+                                                                }}
+                                                            >
+                                                                <Copy className="h-3 w-3" />
+                                                            </Button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-                                        {isBuyer && (
-                                            <Button className="w-full bg-green-600 hover:bg-green-500 h-12 text-base shadow-lg shadow-green-500/20" onClick={() => updateStatus('completed')}>
-                                                <CheckCircle className="mr-2 h-5 w-5" /> ได้รับสินค้าเรียบร้อย (Complete Order)
-                                            </Button>
+
+                                        {/* Status Badge for Instant Delivery - Always Completed effectively */}
+                                        {order.status === 'completed' && (
+                                            <div className="bg-green-500/10 text-green-400 p-4 rounded-xl text-center text-sm font-medium border border-green-500/20 flex flex-col items-center gap-2">
+                                                <CheckCircle className="h-8 w-8 text-green-400 mb-1" />
+                                                <span>รายการเสร็จสมบูรณ์</span>
+                                            </div>
                                         )}
                                     </div>
                                 ) : (
-                                    <>
-                                        <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl text-sm text-orange-200">
-                                            <div className="font-bold mb-2 flex items-center gap-2 text-orange-100">
-                                                <Clock className="h-4 w-4" />
-                                                {isSeller ? 'ส่งมอบสินค้า' : 'รอผู้ขายส่งของ'}
-                                            </div>
-                                            <p className="text-xs opacity-90 leading-relaxed text-orange-200/80">
-                                                {isSeller
-                                                    ? 'เงินบัญชีกลางแล้ว ส่งสินค้าให้ผู้ซื้อในแชท เสร็จแล้วกด "แจ้งส่งมอบ"'
-                                                    : 'ผู้ขายกำลังเตรียมสินค้า...'}
-                                            </p>
-                                        </div>
-                                        {isSeller && (
-                                            <Button className="w-full bg-indigo-600 hover:bg-indigo-500 h-12 text-base shadow-lg shadow-indigo-500/20" onClick={() => updateStatus('delivered')}>
-                                                <Package className="mr-2 h-5 w-5" /> แจ้งส่งมอบงาน/ของ
-                                            </Button>
+                                    /* 2. STANDARD DELIVERY LOGIC */
+                                    <div className="space-y-4">
+                                        {/* Escrowed -> Waiting for Seller */}
+                                        {order.status === 'escrowed' && (
+                                            <>
+                                                <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl text-sm text-orange-200">
+                                                    <div className="font-bold mb-2 flex items-center gap-2 text-orange-100">
+                                                        <Clock className="h-4 w-4" />
+                                                        {isSeller ? 'ส่งมอบสินค้า' : 'รอผู้ขายส่งของ'}
+                                                    </div>
+                                                    <p className="text-xs opacity-90 leading-relaxed text-orange-200/80">
+                                                        {isSeller
+                                                            ? 'เงินบัญชีกลางแล้ว ส่งสินค้าให้ผู้ซื้อในแชท เสร็จแล้วกด "แจ้งส่งมอบ"'
+                                                            : 'ผู้ขายกำลังเตรียมสินค้า...'}
+                                                    </p>
+                                                </div>
+                                                {isSeller && (
+                                                    <Button className="w-full bg-indigo-600 hover:bg-indigo-500 h-12 text-base shadow-lg shadow-indigo-500/20" onClick={() => updateStatus('delivered')}>
+                                                        <Package className="mr-2 h-5 w-5" /> แจ้งส่งมอบงาน/ของ
+                                                    </Button>
+                                                )}
+                                            </>
                                         )}
-                                    </>
-                                )}
-                            </div>
-                        )}
 
-                        {/* STATUS: Delivered (Wait for Confirm) */}
-                        {order.status === 'delivered' && (
-                            <div className="space-y-3">
-                                {secretCode && (
-                                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 mb-2">
-                                        <div className="flex items-center gap-2 mb-2 text-green-400 font-bold">
-                                            <Sparkles className="h-5 w-5" />
-                                            สินค้าของคุณ (Your Item)
-                                        </div>
-                                        <div className="bg-[#0b0c14] p-3 rounded border border-white/10 font-mono text-sm break-all relative group">
-                                            {secretCode}
-                                            <Button
-                                                size="icon"
-                                                variant="ghost"
-                                                className="absolute top-1 right-1 h-6 w-6 text-gray-400 hover:text-white"
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(secretCode)
-                                                    toast.success('Copied to clipboard')
-                                                }}
-                                            >
-                                                <Copy className="h-3 w-3" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                )}
+                                        {/* Delivered -> Waiting for Buyer */}
+                                        {order.status === 'delivered' && (
+                                            <>
+                                                <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl text-sm text-orange-200">
+                                                    <div className="font-bold mb-2 flex items-center gap-2 text-orange-100">
+                                                        <ShieldCheck className="h-4 w-4" />
+                                                        {isBuyer ? 'ตรวจสอบสินค้า' : 'รอผู้ซื้อตรวจสอบ'}
+                                                    </div>
+                                                    <p className="text-xs opacity-90 leading-relaxed text-orange-200/80">
+                                                        {isBuyer
+                                                            ? 'ตรวจสอบสินค้าให้ถูกต้องก่อนกดยืนยัน (เงินจะโอนให้ผู้ขายทันที)'
+                                                            : 'ผู้ซื้อกำลังตรวจสอบสินค้า ระบบจะโอนเงินให้คุณเมื่อผู้ซื้อยืนยัน'}
+                                                    </p>
+                                                </div>
+                                                {isBuyer && (
+                                                    <Button className="w-full bg-orange-500 hover:bg-orange-600 h-12 text-base shadow-lg shadow-orange-500/20" onClick={() => updateStatus('completed')}>
+                                                        <ShieldCheck className="mr-2 h-5 w-5" /> ยืนยันรับของ (โอนเงินให้ผู้ขาย)
+                                                    </Button>
+                                                )}
+                                            </>
+                                        )}
 
-                                <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl text-sm text-orange-200">
-                                    <div className="font-bold mb-2 flex items-center gap-2 text-orange-100">
-                                        <ShieldCheck className="h-4 w-4" />
-                                        {isBuyer ? 'ตรวจสอบสินค้า' : 'รอผู้ซื้อตรวจสอบ'}
-                                    </div>
-                                    <p className="text-xs opacity-90 leading-relaxed text-orange-200/80">
-                                        {isBuyer
-                                            ? 'ตรวจสอบสินค้าให้ถูกต้องก่อนกดยืนยัน (เงินจะโอนให้ผู้ขายทันที)'
-                                            : 'ผู้ซื้อกำลังตรวจสอบสินค้า ระบบจะโอนเงินให้คุณเมื่อผู้ซื้อยืนยัน'}
-                                    </p>
-                                </div>
-                                {isBuyer && (
-                                    <Button className="w-full bg-orange-500 hover:bg-orange-600 h-12 text-base shadow-lg shadow-orange-500/20" onClick={() => updateStatus('completed')}>
-                                        <ShieldCheck className="mr-2 h-5 w-5" /> ยืนยันรับของ (โอนเงินให้ผู้ขาย)
-                                    </Button>
-                                )}
-                            </div>
-                        )}
-
-                        {/* STATUS: Completed */}
-                        {order.status === 'completed' && (
-                            <div className="space-y-4">
-                                <div className="bg-green-500/10 text-green-400 p-4 rounded-xl text-center text-sm font-medium border border-green-500/20 flex flex-col items-center gap-2">
-                                    <CheckCircle className="h-8 w-8 text-green-400 mb-1" />
-                                    <span>รายการเสร็จสมบูรณ์</span>
-                                </div>
-
-                                {secretCode && (
-                                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
-                                        <div className="flex items-center gap-2 mb-2 text-green-400 font-bold">
-                                            <Sparkles className="h-5 w-5" />
-                                            สินค้าของคุณ (Your Item)
-                                        </div>
-                                        <div className="bg-[#0b0c14] p-3 rounded border border-white/10 font-mono text-sm break-all relative group">
-                                            {secretCode}
-                                            <Button
-                                                size="icon"
-                                                variant="ghost"
-                                                className="absolute top-1 right-1 h-6 w-6 text-gray-400 hover:text-white"
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(secretCode)
-                                                    toast.success('Copied to clipboard')
-                                                }}
-                                            >
-                                                <Copy className="h-3 w-3" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {isBuyer && !existingReview && (
-                                    <div className="p-4 border border-white/5 border-dashed rounded bg-[#13151f]">
-                                        <h4 className="font-bold mb-2 text-white">ให้คะแนนร้านค้า</h4>
-                                        <div className="flex gap-1 mb-3">
-                                            {[1, 2, 3, 4, 5].map(s => (
-                                                <button key={s} type="button" onClick={() => setRating(s)}>
-                                                    <Star className={`h-6 w-6 ${s <= rating ? 'fill-yellow-500 text-yellow-500' : 'text-gray-600'}`} />
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <Input
-                                            placeholder="เขียนรีวิว..."
-                                            className="mb-2 bg-[#0b0c14] border-white/10 text-white"
-                                            value={reviewComment}
-                                            onChange={e => setReviewComment(e.target.value)}
-                                        />
-                                        <Button size="sm" className="w-full bg-indigo-600 hover:bg-indigo-500" onClick={submitReview}>ส่งรีวิว</Button>
-                                    </div>
-                                )}
-
-                                {existingReview && (
-                                    <div className="p-4 border border-white/5 rounded bg-[#13151f]">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="font-bold text-sm text-white">รีวิวของคุณ</span>
-                                            <div className="flex text-yellow-500">
-                                                {Array.from({ length: existingReview.rating }).map((_, i) => (
-                                                    <Star key={i} className="h-3 w-3 fill-current" />
-                                                ))}
+                                        {/* Completed */}
+                                        {order.status === 'completed' && (
+                                            <div className="bg-green-500/10 text-green-400 p-4 rounded-xl text-center text-sm font-medium border border-green-500/20 flex flex-col items-center gap-2">
+                                                <CheckCircle className="h-8 w-8 text-green-400 mb-1" />
+                                                <span>รายการเสร็จสมบูรณ์</span>
                                             </div>
-                                        </div>
-                                        <p className="text-xs text-gray-400">{existingReview.comment_th}</p>
+                                        )}
                                     </div>
                                 )}
 
-                                <div className="pt-2 border-t border-white/5">
-                                    <Button variant="ghost" size="sm" className="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => handleDispute()}>
-                                        <AlertTriangle className="mr-2 h-4 w-4" /> แจ้งปัญหา (Report Issue)
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
+                                {/* Common: Review / Dispute for Completed Orders */}
+                                {order.status === 'completed' && (
+                                    <div className="space-y-4 pt-2">
+                                        {isBuyer && !existingReview && (
+                                            <div className="p-4 border border-white/5 border-dashed rounded bg-[#13151f]">
+                                                <h4 className="font-bold mb-2 text-white">ให้คะแนนร้านค้า</h4>
+                                                <div className="flex gap-1 mb-3">
+                                                    {[1, 2, 3, 4, 5].map(s => (
+                                                        <button key={s} type="button" onClick={() => setRating(s)}>
+                                                            <Star className={`h-6 w-6 ${s <= rating ? 'fill-yellow-500 text-yellow-500' : 'text-gray-600'}`} />
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <Input
+                                                    placeholder="เขียนรีวิว..."
+                                                    className="mb-2 bg-[#0b0c14] border-white/10 text-white"
+                                                    value={reviewComment}
+                                                    onChange={e => setReviewComment(e.target.value)}
+                                                />
+                                                <Button size="sm" className="w-full bg-indigo-600 hover:bg-indigo-500" onClick={submitReview}>ส่งรีวิว</Button>
+                                            </div>
+                                        )}
 
-                        {order.status === 'disputed' && (
-                            <div className="bg-red-500/10 text-red-400 p-4 rounded text-center text-sm font-medium border border-red-500/20">
-                                รายการนี้กำลังถูกตรวจสอบ (Disputed)
+                                        {existingReview && (
+                                            <div className="p-4 border border-white/5 rounded bg-[#13151f]">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="font-bold text-sm text-white">รีวิวของคุณ</span>
+                                                    <div className="flex text-yellow-500">
+                                                        {Array.from({ length: existingReview.rating }).map((_, i) => (
+                                                            <Star key={i} className="h-3 w-3 fill-current" />
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-gray-400">{existingReview.comment_th}</p>
+                                            </div>
+                                        )}
+
+                                        <div className="pt-2 border-t border-white/5">
+                                            <Button variant="ghost" size="sm" className="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => handleDispute()}>
+                                                <AlertTriangle className="mr-2 h-4 w-4" /> แจ้งปัญหา (Report Issue)
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Disputes Display */}
+                                {order.status === 'disputed' && (
+                                    <div className="bg-red-500/10 text-red-400 p-4 rounded text-center text-sm font-medium border border-red-500/20">
+                                        รายการนี้กำลังถูกตรวจสอบ (Disputed)
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -588,7 +638,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                             </div>
                         </div>
                     </CardContent>
-                </Card>
+                </Card >
 
                 <Card className="flex-1 bg-[#1e202e] border-white/5 text-white">
                     <CardHeader>
@@ -618,10 +668,10 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         </div>
                     </CardContent>
                 </Card>
-            </div>
+            </div >
 
             {/* Right: Chat System (Updated UI) */}
-            <div className="flex-1 flex flex-col bg-[#1e202e] border border-white/5 rounded-2xl shadow-xl h-full overflow-hidden">
+            < div className="flex-1 flex flex-col bg-[#1e202e] border border-white/5 rounded-2xl shadow-xl h-full overflow-hidden" >
                 <div className="p-4 border-b border-white/5 bg-[#13151f] flex justify-between items-center text-white">
                     <h3 className="font-bold flex items-center gap-2">
                         <MessageSquare className="h-5 w-5 text-indigo-400" /> ห้องสนทนา
@@ -776,10 +826,11 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         </Button>
                     </form>
                 </div>
-            </div>
+            </div >
 
             {/* Dialogs */}
-            <AlertDialog open={!!pendingStatus} onOpenChange={(open) => !open && setPendingStatus(null)}>
+            < AlertDialog open={!!pendingStatus
+            } onOpenChange={(open) => !open && setPendingStatus(null)}>
                 <AlertDialogContent className="bg-[#1e202e] border-white/10 text-white">
                     <AlertDialogHeader>
                         <AlertDialogTitle>ยืนยันการเปลี่ยนแปลงสถานะ?</AlertDialogTitle>
@@ -797,7 +848,36 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
-            </AlertDialog>
+            </AlertDialog >
+
+            {/* Reveal Secret Dialog */}
+            < AlertDialog open={revealDialogOpen} onOpenChange={setRevealDialogOpen} >
+                <AlertDialogContent className="bg-[#1e202e] border-white/10 text-white">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2 text-orange-400">
+                            <ShieldCheck className="h-5 w-5" />
+                            ยืนยันการเปิดดูสินค้า (Confirm Reveal)
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-gray-400">
+                            เมื่อเปิดดูสินค้าแล้ว <span className="text-white font-bold">จะไม่สามารถขอคืนเงินได้</span> ยกเว้นสินค้าใช้งานไม่ได้จริง
+                            <br /><br />
+                            Once revealed, this item is <span className="text-white font-bold">non-refundable</span> unless proven defective.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="bg-transparent border-white/10 text-white hover:bg-white/5">Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-orange-500 hover:bg-orange-600 text-white"
+                            onClick={() => {
+                                setIsSecretRevealed(true)
+                                setRevealDialogOpen(false)
+                            }}
+                        >
+                            ยอมรับและเปิดดู (Accept & Reveal)
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog >
 
             <Dialog open={disputeOpen} onOpenChange={setDisputeOpen}>
                 <DialogContent className="bg-[#1e202e] border-white/10 text-white">
@@ -822,6 +902,6 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                 </DialogContent>
             </Dialog>
 
-        </div>
+        </div >
     )
 }
