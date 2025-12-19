@@ -59,6 +59,11 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
 
     const [secretCode, setSecretCode] = useState<string | null>(null)
 
+    // Typing Indicators
+    const [isPartnerTyping, setIsPartnerTyping] = useState(false)
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const lastTypedRef = useRef<number>(0)
+
     useEffect(() => {
         const init = async () => {
             const { data: { user } } = await supabase.auth.getUser()
@@ -146,6 +151,15 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
 
         const channel = supabase
             .channel(`order-chat-${conversationId}`)
+            .on('broadcast', { event: 'typing' }, (payload) => {
+                if (payload.payload.userId !== currentUser.id) {
+                    setIsPartnerTyping(true)
+                    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+                    typingTimeoutRef.current = setTimeout(() => {
+                        setIsPartnerTyping(false)
+                    }, 3000)
+                }
+            })
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, async (payload) => {
                 const newMsg = payload.new
 
@@ -695,7 +709,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                     })}
                 </div>
 
-                <div className="p-4 border-t border-white/5 bg-[#13151f]">
+                <div className="p-4 border-t border-white/5 bg-[#13151f] relative">
                     <input
                         type="file"
                         ref={fileInputRef}
@@ -729,10 +743,34 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                         </Button>
                         <Input
                             value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
+                            onChange={(e) => {
+                                setNewMessage(e.target.value)
+
+                                // Broadcast typing
+                                if (currentUser && conversationId) {
+                                    const now = Date.now()
+                                    if (now - lastTypedRef.current > 2000) {
+                                        lastTypedRef.current = now
+                                        supabase.channel(`order-chat-${conversationId}`).send({
+                                            type: 'broadcast',
+                                            event: 'typing',
+                                            payload: { userId: currentUser.id }
+                                        })
+                                    }
+                                }
+                            }}
                             placeholder="พิมพ์ข้อความ..."
                             className="flex-1 bg-[#0b0c14] border-white/10 text-white placeholder:text-gray-600 focus-visible:ring-indigo-500 rounded-full px-4"
                         />
+                        {/* Typing Indicator */}
+                        {isPartnerTyping && (
+                            <div className="absolute -top-6 left-4 text-xs text-gray-500 animate-pulse flex items-center gap-1">
+                                <span className="w-1 h-1 bg-gray-500 rounded-full animate-bounce delay-0"></span>
+                                <span className="w-1 h-1 bg-gray-500 rounded-full animate-bounce delay-100"></span>
+                                <span className="w-1 h-1 bg-gray-500 rounded-full animate-bounce delay-200"></span>
+                                Partner is typing...
+                            </div>
+                        )}
                         <Button type="submit" size="icon" disabled={!newMessage.trim() && !uploading} className="bg-indigo-600 hover:bg-indigo-500 rounded-full h-10 w-10 shrink-0">
                             <Send className="h-4 w-4" />
                         </Button>
