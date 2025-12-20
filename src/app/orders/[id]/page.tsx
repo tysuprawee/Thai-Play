@@ -944,13 +944,41 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                                     <SelectValue placeholder="เลือกหัวข้อปัญหา..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="Item Not Working">สินค้าใช้งานไม่ได้ (Item Not Working)</SelectItem>
-                                    <SelectItem value="Invalid Credentials">รหัสผ่านผิด (Invalid Credentials)</SelectItem>
-                                    <SelectItem value="Item Not As Described">สินค้าไม่ตรงปก (Item Not As Described)</SelectItem>
+                                    {isBuyer ? (
+                                        <>
+                                            <SelectItem value="Item Not Working">สินค้าใช้งานไม่ได้ (Item Not Working)</SelectItem>
+                                            <SelectItem value="Invalid Credentials">รหัสผ่านผิด (Invalid Credentials)</SelectItem>
+                                            <SelectItem value="Item Not As Described">สินค้าไม่ตรงปก (Item Not As Described)</SelectItem>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <SelectItem value="Buyer False Claim">ผู้ซื้อแจ้งเท็จ (Buyer False Claim)</SelectItem>
+                                            <SelectItem value="Buyer Did Not Confirm">ผู้ซื้อไม่กดยืนยัน (Buyer Did Not Confirm)</SelectItem>
+                                            <SelectItem value="Rude Behavior">พฤติกรรมไม่เหมาะสม (Rude Behavior)</SelectItem>
+                                        </>
+                                    )}
                                     <SelectItem value="Other">อื่นๆ (Other)</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
+
+                        {/* Dispute Info Box */}
+                        {disputeCategory && (
+                            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-200">
+                                {(() => {
+                                    const infoMap: Record<string, string> = {
+                                        "Item Not Working": "We will investigate this claim within 24-48 hours. Please ensure you have provided proof (screenshots/video) in the chat.",
+                                        "Invalid Credentials": "We will independently verify the credentials. Please do not change them while we investigate.",
+                                        "Item Not As Described": "We will compare the delivered item with the listing description.",
+                                        "Buyer False Claim": "We will review the chat logs and transaction history to verify delivery.",
+                                        "Buyer Did Not Confirm": "Note: Orders automatically complete after 72 hours. Submit this only if you require immediate intervention.",
+                                        "Rude Behavior": "We will review the chat for Code of Conduct violations. This report focuses on behavior and may not cancel the order.",
+                                        "Other": "Please provide detailed information below."
+                                    }
+                                    return infoMap[disputeCategory] || "Please describe your issue below."
+                                })()}
+                            </div>
+                        )}
 
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-gray-300">รายละเอียดเพิ่มเติม (Details)</label>
